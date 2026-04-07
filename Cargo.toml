@@ -4,4 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+crossbeam-channel = "0.5.15"
+dashmap = "7.0.0-rc2"
+eyre = "0.6.12"
+notify-debouncer-mini = "0.4.1"
 salsa = "0.26.0"
+
+[dev-dependencies]
