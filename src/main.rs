@@ -1,4 +1,8 @@
 #![allow(unreachable_patterns)]
+
+pub mod compiler;
+pub use compiler::lexer::lexer::lex as internal_parse;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -49,9 +53,9 @@ fn main() -> Result<()> {
     let initial = db.input(PathBuf::from("package.toml"))?;
 
     loop {
-        let sum = compile(&db, initial);
-        let diagnostics = compile::accumulated::<Diagnostic>(&db, initial);
-        let logs = compile::accumulated::<Log>(&db, initial);
+        let sum = compile_package(&db, initial);
+        let diagnostics = compile_package::accumulated::<Diagnostic>(&db, initial);
+        let logs = compile_package::accumulated::<Log>(&db, initial);
 
         if diagnostics.is_empty() {
             println!("Sum is: {sum}");
@@ -200,9 +204,9 @@ struct ParsedFile<'db> {
 }
 
 #[salsa::tracked]
-fn compile(db: &dyn Db, input: File) -> u32 {
-    Log::info(db, format!("Compiling file: {}", input.path(db).display()));
-    let parsed = parse(db, input);
+fn compile_package(db: &dyn Db, manifest_file: File) -> u32 {
+    Log::info(db, format!("Compiling package: {}", manifest_file.path(db).display()));
+    let parsed = parse(db, manifest_file);
     sum(db, parsed)
 }
 

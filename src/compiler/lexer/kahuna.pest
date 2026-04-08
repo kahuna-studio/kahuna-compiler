@@ -1,0 +1,52 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+
+file = { SOI ~ declaration+ ~ EOI }
+
+declaration = _{ function_declaration }
+
+function_declaration = { identifier ~ "=" ~ "(" ~ parameter_list ~ ")" ~ "->" ~ expression }
+
+parameter_list = { (parameter ~ ("," ~ parameter)*)? }
+parameter = { identifier ~ type_annotation }
+type_annotation = { "float" }
+
+// Expressions
+expression = { if_expr | literal | pratt_expression }
+pratt_expression = { atom ~ (infix_op ~ atom)* }
+pratt_compatible_expression = { if_expr | pratt_expression }
+
+atom = _{
+    number |
+    identifier |
+    "(" ~ pratt_compatible_expression ~ ")"
+}
+
+// Operator table for Pratt expressions
+infix_op = { "+" | "-" | "*" | "/" }  // expand later as needed
+
+// Literals
+integer_no_underscore    = @{ ASCII_DIGIT{4,} }
+integer_with_underscore  = @{ ASCII_DIGIT{1,3} ~ ("_" ~ ASCII_DIGIT{3})+ }
+integer_undefined        = @{ ASCII_DIGIT{1,3} }
+fraction_no_underscore   = @{ ASCII_DIGIT{4,} }
+fraction_with_underscore = @{ ((ASCII_DIGIT{3} ~ "_")+ ~ ASCII_DIGIT{1,3}) | ASCII_DIGIT{1,3} }
+fraction_undefined       = @{ ASCII_DIGIT{1,3} }
+
+number = @{ "-"? ~ (
+    (integer_no_underscore   ~ ("." ~ (fraction_no_underscore | fraction_undefined))?)
+  | (integer_with_underscore ~ ("." ~ fraction_with_underscore)?)
+  | (integer_undefined       ~ ("." ~ (fraction_no_underscore | fraction_with_underscore | fraction_undefined))?)
+  | ("." ~ (fraction_no_underscore | fraction_with_underscore))) }
+literal = { number }
+
+// Identifiers
+identifier = @{ ASCII_ALPHA_LOWER+ }
+sc_identifier = @{ ASCII_ALPHA_LOWER+ }  // special context identifiers
+builtin_var = { "pi" | "e" }  // example built-ins
+stream_value_ref = { "$" ~ ASCII_DIGIT+ }  // example
+function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+constructor_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+
+// Placeholder expressions for completeness
+if_expr = { "if" ~ expression ~ "then" ~ expression ~ ("else" ~ expression)? }
+pipelined_expression = { expression ~ "|" ~ expression }  // example for pipelining

@@ -1,0 +1,16 @@
+sum = (a float, b float) -> a + b
+=== parse
+function_declaration
+  identifier: sum
+  parameter_list
+    parameter
+      identifier: a
+      type_annotation: float
+    parameter
+      identifier: b
+      type_annotation: float
+  expression
+    pratt_expression
+      identifier: a
+      infix_op: +
+      identifier: b

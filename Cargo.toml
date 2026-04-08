@@ -8,6 +8,9 @@ crossbeam-channel = "0.5.15"
 dashmap = "7.0.0-rc2"
 eyre = "0.6.12"
 notify-debouncer-mini = "0.4.1"
+pest = "2.8.6"
+pest_derive = "2.8.6"
 salsa = "0.26.0"
+similar = "3.0.0"
 
 [dev-dependencies]
