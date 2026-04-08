@@ -1,0 +1,12 @@
+a = () -> 42
+=== pre-process
+a = () -> 42{{NEWLINE}}
+=== parse
+file
+  function_declaration
+    function_signature
+      sc_identifier: a
+      function_declaration_parameters: ()
+    expression
+      literal
+        number: 42

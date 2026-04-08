@@ -1,30 +1,68 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT    = _{ "#" ~ (!NEWLINE ~ ANY)* }
+LINEBREAK  = _{ "{{NEWLINE}}" }
+INDENT     = _{ "{{INDENT}}" }
+DEDENT     = _{ "{{DEDENT}}" }
 
-file = { SOI ~ declaration+ ~ EOI }
+file = { SOI ~ module_declaration? ~ function_declaration* ~ LINEBREAK* ~ EOI }
 
-declaration = _{ function_declaration }
+module_declaration = { "module" ~ psc_identifier ~ ":" ~ LINEBREAK ~ INDENT ~ module_body ~ DEDENT ~ LINEBREAK }
+module_body = _{ ("inputs:" ~ LINEBREAK ~ INDENT ~ module_inputs ~ DEDENT)? ~ ("outputs:" ~ LINEBREAK ~ INDENT ~ module_outputs ~ DEDENT)? ~ (local_assignment | output_port_assignment)* }
+module_inputs = { (input_port ~ LINEBREAK)+ }
+module_outputs = { (output_port ~ LINEBREAK)+ }
+input_port = { stream_identifier ~ ":" ~ port_type }
+output_port = { stream_identifier ~ ":" ~ port_type }
 
-function_declaration = { identifier ~ "=" ~ "(" ~ parameter_list ~ ")" ~ "->" ~ expression }
+audio_stream_alias = { "audio" }
+control_stream_alias = { "control" }
+midi_stream_alias = { "midi" }
+audio_rate = { "audio_rate" }
+control_rate = { "control_rate" }
+rate = { audio_rate | control_rate }
+port_attributes = { "(" ~ rate ~ ")" }
+port_type = { (audio_stream_alias | midi_stream_alias | stream_type) ~ port_attributes? ~ ( "=" ~ literal )? }
 
-parameter_list = { (parameter ~ ("," ~ parameter)*)? }
-parameter = { identifier ~ type_annotation }
-type_annotation = { "float" }
+function_declaration = { function_signature ~ "->" ~ ((expression ~ LINEBREAK) | (LINEBREAK ~ block)) }
+function_signature   = { sc_identifier ~ "=" ~ function_declaration_parameters ~ (":" ~ ty)? }
+function_declaration_parameters = { "(" ~ parameter_list? ~ ")" }
 
-// Expressions
-expression = { if_expr | literal | pratt_expression }
-pratt_expression = { atom ~ (infix_op ~ atom)* }
-pratt_compatible_expression = { if_expr | pratt_expression }
+parameter_list       = { parameter ~ ("," ~ parameter)* }
+parameter            = { value_identifier ~ ty }
 
-atom = _{
-    number |
-    identifier |
-    "(" ~ pratt_compatible_expression ~ ")"
+function_call = { sc_identifier ~ "(" ~ argument_list? ~ ")" }
+constructor_call = { ty ~ "(" ~ argument_list? ~ ")" }
+argument_list = { argument ~ ("," ~ argument)* }
+argument      = { (value_identifier ~ ":")? ~ expression }
+
+local_assignment = { "let" ~ value_identifier ~ (":" ~ ty)? ~ "=" ~ expression ~ LINEBREAK }
+output_port_assignment = { stream_identifier ~ "=" ~ expression ~ LINEBREAK }
+if_expr = {
+  "if" ~ expression ~ "then"
+  ~ ((LINEBREAK ~ block ~ "else" ~ LINEBREAK ~ block)
+    | expression ~ "else" ~ expression ~ LINEBREAK) }
+
+ty = { base_type ~ type_suffix* }
+
+base_type = _{
+    "unit"
+  | "bool"
+  | numeric_type
+  | option_type
+  | tuple_type
+  | map_type
+  | class_type
 }
 
-// Operator table for Pratt expressions
-infix_op = { "+" | "-" | "*" | "/" }  // expand later as needed
+numeric_type = @{ ("int" | "float" | "double") ~ ("<" ~ number ~ "," ~ number ~ ">")? }
+option_type  = @{ "option" ~ type_parameters }
+class_type = { psc_identifier ~ type_parameters? }
+type_parameters = { "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
-// Literals
+tuple_type   = @{ "(" ~ ty ~ (", " ~ ty)* ~ ")" }
+map_type     = @{ "{" ~ ty ~ ": " ~ ty ~ "}" }
+
+type_suffix  = @{ "[" ~ ASCII_DIGIT* ~ "]" }
+
 integer_no_underscore    = @{ ASCII_DIGIT{4,} }
 integer_with_underscore  = @{ ASCII_DIGIT{1,3} ~ ("_" ~ ASCII_DIGIT{3})+ }
 integer_undefined        = @{ ASCII_DIGIT{1,3} }
@@ -39,14 +77,83 @@ number = @{ "-"? ~ (
   | ("." ~ (fraction_no_underscore | fraction_with_underscore))) }
 literal = { number }
 
-// Identifiers
-identifier = @{ ASCII_ALPHA_LOWER+ }
-sc_identifier = @{ ASCII_ALPHA_LOWER+ }  // special context identifiers
-builtin_var = { "pi" | "e" }  // example built-ins
-stream_value_ref = { "$" ~ ASCII_DIGIT+ }  // example
-function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
-constructor_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+string = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
 
-// Placeholder expressions for completeness
-if_expr = { "if" ~ expression ~ "then" ~ expression ~ ("else" ~ expression)? }
-pipelined_expression = { expression ~ "|" ~ expression }  // example for pipelining
+sc_identifier_first_segment = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)* }
+sc_identifier_consecutive_segment = { (ASCII_ALPHA_LOWER | ASCII_DIGIT)+ }
+sc_identifier = @{
+    sc_identifier_first_segment
+    ~ ("_" ~ sc_identifier_consecutive_segment)*
+}
+
+psc_identifier_first_segment = { ASCII_ALPHA_UPPER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)* }
+psc_identifier_consecutive_segment = { (ASCII_ALPHA_UPPER | ASCII_DIGIT) ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)* }
+psc_identifier = @{ psc_identifier_first_segment ~ ("_" ~ psc_identifier_consecutive_segment)* }
+
+stream_identifier = @{ ("~" | "@" | "$") ~ sc_identifier }
+stream_type = @{ ty }
+value_identifier = { sc_identifier | stream_identifier }
+
+// Built-in variables that kahuna provides
+builtin_var = { "PI" }
+
+stream_value_ref = { "$" }
+
+// Arithmetic operators
+add = { "+" }
+subtract = { "-" }
+multiply = { "*" }
+divide = { "/" }
+modulo = { "%" }
+power = { "^" | "**" }
+
+// Comparison operators
+eq = { "==" }
+ne = { "!=" }
+le = { "<=" }  // Must come before "<" to avoid tokenizing "<=" as "<" + "=" in the `infix_op` rule later
+ge = { ">=" }  // Must come before ">" to avoid tokenizing ">=" as ">" + "=" in the `infix_op` rule later
+lt = { "<" }
+gt = { ">" }
+
+// Logical operators
+logical_and = { "&&" }
+logical_or = { "||" }
+logical_not = { "!" }
+
+arrow = { "->" }
+colon = { ":" }
+
+// Primary expressions (atoms that cannot be broken down further)
+atom = _{
+    number |
+    string |
+    stream_value_ref |
+    builtin_var |
+    function_call |
+    constructor_call |
+    sc_identifier |
+    "(" ~ pratt_compatible_expression ~ ")"
+}
+
+stream_source = {
+    stream_value_ref |
+    function_call |
+    constructor_call |
+    stream_identifier
+}
+
+expression = { if_expr | pipelined_expression | literal | pratt_expression }
+pratt_expression = _{ atom ~ (infix_op ~ atom)* }
+pratt_compatible_expression = _{ if_expr | pratt_expression }
+block = { INDENT ~ local_assignment* ~ expression ~ LINEBREAK ~ DEDENT }
+
+// All infix operations that the Pratt parser will handle
+infix_op = _{
+    add | subtract | multiply | divide | modulo | power |
+    eq | ne | le | ge | lt | gt | logical_and | logical_or
+}
+
+pipelined_expression = { stream_source ~ LINEBREAK ~ INDENT ~ pipeline_operator+ ~ DEDENT }
+
+pipeline_operator = _{ map_operation }
+map_operation = { "|>" ~ expression ~ LINEBREAK }

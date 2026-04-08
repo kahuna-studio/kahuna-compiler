@@ -1,17 +1,24 @@
 sum = (a float, b float) -> a + b
+=== pre-process
+sum = (a float, b float) -> a + b{{NEWLINE}}
 === parse
 file
   function_declaration
-    identifier: sum
-    parameter_list
-      parameter
-        identifier: a
-        type_annotation: float
-      parameter
-        identifier: b
-        type_annotation: float
+    function_signature
+      sc_identifier: sum
+      function_declaration_parameters
+        parameter_list
+          parameter
+            value_identifier
+              sc_identifier: a
+            ty
+              numeric_type: float
+          parameter
+            value_identifier
+              sc_identifier: b
+            ty
+              numeric_type: float
     expression
-      pratt_expression
-        identifier: a
-        infix_op: +
-        identifier: b
+      sc_identifier: a
+      add: +
+      sc_identifier: b

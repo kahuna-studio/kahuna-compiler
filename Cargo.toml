@@ -12,5 +12,6 @@ pest = "2.8.6"
 pest_derive = "2.8.6"
 salsa = "0.26.0"
 similar = "3.0.0"
+indexmap = "2.13.1"
 
 [dev-dependencies]

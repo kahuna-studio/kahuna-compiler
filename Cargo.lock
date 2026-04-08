@@ -288,6 +288,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap",
  "eyre",
+ "indexmap",
  "notify-debouncer-mini",
  "pest",
  "pest_derive",
