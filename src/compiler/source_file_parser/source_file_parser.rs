@@ -4,9 +4,9 @@ use pest::Parser;
 use pest_derive::Parser;
 
 #[derive(Parser)]
-#[grammar = "compiler/lexer/kahuna.pest"]
+#[grammar = "compiler/source_file_parser/kahuna.pest"]
 struct KahunaParser;
 
-pub fn lex(file_text: &str) -> Result<Pairs<'_, Rule>, Error<Rule>> {
+pub fn parse_source_file(file_text: &str) -> Result<Pairs<'_, Rule>, Error<Rule>> {
   KahunaParser::parse(Rule::file, file_text)
 }

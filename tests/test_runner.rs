@@ -1,25 +1,19 @@
-mod parser_tests;
-mod preprocessor_tests;
+mod source_file_parser_tests;
+mod source_file_preprocessor_tests;
 
-use std::collections::HashMap;
-use parser_tests::verify_parsing;
-use similar::{ChangeTag, TextDiff};
+use crate::source_file_preprocessor_tests::verify_source_file_pre_processing;
 use indexmap::IndexMap;
+use similar::{ChangeTag, TextDiff};
+use source_file_parser_tests::verify_source_file_parsing;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-
-struct TestCase {
-    name: String,
-    source: String,
-    sections: HashMap<CompilationStep, String>,
-}
 use std::str::FromStr;
-use crate::preprocessor_tests::verify_preprocessing;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CompilationStep {
-    PreProcessing,
-    Parse,
+    SourceFilePreProcessing,
+    SourceFileParsing,
     ConstructAst,
 }
 
@@ -28,29 +22,54 @@ impl FromStr for CompilationStep {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
-            "pre-process" => Ok(CompilationStep::PreProcessing),
-            "parse" => Ok(CompilationStep::Parse),
+            "source-file-pre-processing" => Ok(CompilationStep::SourceFilePreProcessing),
+            "source-file-parsing" => Ok(CompilationStep::SourceFileParsing),
             "constructAst" => Ok(CompilationStep::ConstructAst),
             other => Err(format!("Unknown compilation step: '{other}'")),
         }
     }
 }
 
-enum CompilationStepResult {
-    Success(bool),
-    Failure(CompilationStepFailure),
-}
+fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
+    let mut results: IndexMap<CompilationStep, CompilationStepResult> = IndexMap::new();
 
-#[derive(Clone, Debug)]
-struct CompilationStepFailure {
-    error: String,
-    diff: Option<Diff>,
-}
+    // ----------------------- Pre-processing -----------------------
 
-#[derive(Clone, Debug)]
-struct Diff {
-  expected: String,
-   actual: String,
+    let step = CompilationStep::SourceFilePreProcessing;
+    let source = test_case.source.clone();
+    let expected = test_case.sections.get(&step).map(|s| s.as_str());
+
+    let result = verify_source_file_pre_processing(&source, expected);
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+
+    // ----------------------- Parsing -----------------------
+
+    let step = CompilationStep::SourceFileParsing;
+    let source = result.unwrap();
+    let expected = test_case.sections.get(&step).map(|s| s.as_str());
+
+    let result = verify_source_file_parsing(source.as_str(), expected);
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+
+    results
 }
 
 #[test]
@@ -65,7 +84,8 @@ fn all_cases() {
     );
 
     let mut succeeded = true;
-    let mut results: IndexMap<String, IndexMap<CompilationStep, CompilationStepResult>> = IndexMap::new();
+    let mut results: IndexMap<String, IndexMap<CompilationStep, CompilationStepResult>> =
+        IndexMap::new();
     for case in cases {
         let test_case_result = run_test_case(&case);
         results.insert(case.name, test_case_result);
@@ -76,12 +96,15 @@ fn all_cases() {
         result
             .iter()
             .for_each(|(&step, step_result)| match step_result {
-              CompilationStepResult::Success(true) => {
-                println!("\x1b[32m✅ {} - {:?}\x1b[0m", output, step);
-              }
-              CompilationStepResult::Success(false) => {
-                println!("\x1b[33m✅ {} - {:?} (no specification defined)\x1b[0m", output, step);
-              }
+                CompilationStepResult::Success(true) => {
+                    println!("\x1b[32m✅ {} - {:?}\x1b[0m", output, step);
+                }
+                CompilationStepResult::Success(false) => {
+                    println!(
+                        "\x1b[33m✅ {} - {:?} (no specification defined)\x1b[0m",
+                        output, step
+                    );
+                }
                 CompilationStepResult::Failure(failure) => {
                     succeeded = false;
                     println!("\x1b[31m❌ {} - {:?}\x1b[0m", output, step);
@@ -112,37 +135,27 @@ fn all_cases() {
     }
 }
 
-fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
+struct TestCase {
+    name: String,
+    source: String,
+    sections: HashMap<CompilationStep, String>,
+}
 
-    let mut results: IndexMap<CompilationStep, CompilationStepResult> = IndexMap::new();
+enum CompilationStepResult {
+    Success(bool),
+    Failure(CompilationStepFailure),
+}
 
-    // ----------------------- Pre-processing -----------------------
+#[derive(Clone, Debug)]
+struct CompilationStepFailure {
+    error: String,
+    diff: Option<Diff>,
+}
 
-    let step = CompilationStep::PreProcessing;
-    let source = test_case.source.clone();
-    let expected = test_case.sections.get(&step).map(|s| s.as_str());
-
-    let result = verify_preprocessing(&source, expected);
-
-    update_results(&mut results, result.clone().map(|_| ()), step, expected.is_some());
-    if result.is_err() {
-      return results
-    }
-
-    // ----------------------- Parsing -----------------------
-
-    let step = CompilationStep::Parse;
-    let source = result.unwrap();
-    let expected = test_case.sections.get(&step).map(|s| s.as_str());
-
-    let result = verify_parsing(source.as_str(), expected);
-
-    update_results(&mut results, result.clone().map(|_| ()), step, expected.is_some());
-    if result.is_err() {
-      return results
-    }
-
-    results
+#[derive(Clone, Debug)]
+struct Diff {
+    expected: String,
+    actual: String,
 }
 
 fn load_cases(dir: &str) -> Vec<TestCase> {
@@ -187,12 +200,17 @@ fn parse_case(name: String, content: &str) -> TestCase {
     }
 }
 
-fn update_results(results: &mut IndexMap<CompilationStep, CompilationStepResult>, result: Result<(), CompilationStepFailure>, compilation_step: CompilationStep, has_spec: bool) {
-  results.insert(
-    compilation_step,
-    match result {
-      Ok(_) => CompilationStepResult::Success(has_spec),
-      Err(failure) => CompilationStepResult::Failure(failure),
-    },
-  );
+fn update_results(
+    results: &mut IndexMap<CompilationStep, CompilationStepResult>,
+    result: Result<(), CompilationStepFailure>,
+    compilation_step: CompilationStep,
+    has_spec: bool,
+) {
+    results.insert(
+        compilation_step,
+        match result {
+            Ok(_) => CompilationStepResult::Success(has_spec),
+            Err(failure) => CompilationStepResult::Failure(failure),
+        },
+    );
 }

@@ -1,12 +1,12 @@
+use crate::{CompilationStepFailure, Diff};
+use kahuna_compiler::compiler::source_file_parser::source_file_parser::Rule;
+use kahuna_compiler::internal_parse_source_file;
 use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
-use kahuna_compiler::compiler::lexer::lexer::Rule;
-use kahuna_compiler::internal_parse;
-use crate::{CompilationStepFailure, Diff};
 
-pub fn verify_parsing<'a>(input: &'a str, expected_result: Option<&str>) -> Result<Pairs<'a, Rule>, CompilationStepFailure> {
+pub fn verify_source_file_parsing<'a>(input: &'a str, expected_result: Option<&str>) -> Result<Pairs<'a, Rule>, CompilationStepFailure> {
 
-  let result = internal_parse(input);
+  let result = internal_parse_source_file(input);
 
   if result.is_err() {
     return Err(CompilationStepFailure { error: format!("Parse error: {}", result.err().unwrap()), diff: None });

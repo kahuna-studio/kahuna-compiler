@@ -1,7 +1,7 @@
 sum = (a float, b float) -> a + b
-=== pre-process
+=== source-file-pre-processing
 sum = (a float, b float) -> a + b{{NEWLINE}}
-=== parse
+=== source-file-parsing
 file
   function_declaration
     function_signature

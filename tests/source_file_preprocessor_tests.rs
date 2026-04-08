@@ -1,9 +1,9 @@
 use crate::{CompilationStepFailure, Diff};
-use kahuna_compiler::internal_preprocess;
+use kahuna_compiler::internal_pre_process;
 
-pub fn verify_preprocessing(input: &str, expected_result: Option<&str>) -> Result<String, CompilationStepFailure> {
+pub fn verify_source_file_pre_processing(input: &str, expected_result: Option<&str>) -> Result<String, CompilationStepFailure> {
 
-  let result = internal_preprocess(input);
+  let result = internal_pre_process(input);
 
   if let Some(expected) = expected_result {
 

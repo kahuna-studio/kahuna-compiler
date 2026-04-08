@@ -1,7 +1,7 @@
 a = () -> 42
-=== pre-process
+=== source-file-pre-processing
 a = () -> 42{{NEWLINE}}
-=== parse
+=== source-file-parsing
 file
   function_declaration
     function_signature
