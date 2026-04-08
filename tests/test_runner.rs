@@ -32,7 +32,17 @@ impl FromStr for CompilationStep {
 
 enum CompilationStepResult {
     Success,
-    Failure(String, Option<(String, String)>),
+    Failure(CompilationStepFailure),
+}
+
+struct CompilationStepFailure {
+    error: String,
+    diff: Option<Diff>,
+}
+
+struct Diff {
+  expected: String,
+   actual: String,
 }
 
 #[test]
@@ -62,14 +72,15 @@ fn all_cases() {
                 CompilationStepResult::Success => {
                     println!("\x1b[32m✅ {} - {:?}\x1b[0m", output, step);
                 }
-                CompilationStepResult::Failure(error, diff) => {
+                CompilationStepResult::Failure(failure) => {
                     succeeded = false;
                     println!("\x1b[31m❌ {} - {:?}\x1b[0m", output, step);
-                    println!("   Error: {}", error);
+                    println!("   Error: {}", failure.error);
 
-                    if let Some((expected, actual)) = diff {
+                    if failure.diff.is_some() {
+                        let diff = failure.diff.as_ref().unwrap();
                         println!("   Diff:\n");
-                        let diff = TextDiff::from_lines(expected, actual);
+                        let diff = TextDiff::from_lines(diff.expected.clone(), diff.actual.clone());
 
                         for change in diff.iter_all_changes() {
                             let sign = match change.tag() {
@@ -103,9 +114,9 @@ fn run_test_case(test_case: &TestCase) -> HashMap<CompilationStep, CompilationSt
     );
     results.insert(
         CompilationStep::Parse,
-        match &parsing_result {
+        match parsing_result {
             Ok(_) => CompilationStepResult::Success,
-            Err(err) => CompilationStepResult::Failure(err.0.clone(), err.1.clone()),
+            Err(failure) => CompilationStepResult::Failure(failure),
         },
     );
 
