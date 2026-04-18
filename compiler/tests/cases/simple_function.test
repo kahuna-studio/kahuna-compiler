@@ -10,5 +10,5 @@ file
     expression
       literal
         number: 42
-=== ast-mapping
+=== ast-to-kahuna-code-serialization
 a = () -> 42

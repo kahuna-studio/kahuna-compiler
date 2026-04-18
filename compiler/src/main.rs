@@ -4,10 +4,9 @@ pub mod compiler;
 pub use compiler::source_file_parser::source_file_parser::parse_source_file as internal_parse;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use crossbeam_channel::{Sender, unbounded};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use eyre::{Report, Result, eyre};
@@ -35,7 +34,7 @@ fn main() -> Result<()> {
     let src_dir = package_path.parent().unwrap().join("").canonicalize()?;
     let base_dir = package_path.parent().unwrap().canonicalize()?;
 
-    let (tx, rx) = unbounded();
+    let (tx, rx) = mpsc::channel();
     let mut db = KahunaCompilerDatabase::new(tx, base_dir);
 
     // Watch upfront
@@ -127,7 +126,7 @@ struct KahunaCompilerDatabase {
 }
 
 impl KahunaCompilerDatabase {
-    fn new(tx: Sender<DebounceEventResult>, base_dir: PathBuf) -> Self {
+    fn new(tx: mpsc::Sender<DebounceEventResult>, base_dir: PathBuf) -> Self {
         let logs: Arc<Mutex<Vec<String>>> = Default::default();
 
         Self {

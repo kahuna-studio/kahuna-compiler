@@ -22,5 +22,5 @@ file
       sc_identifier: a
       add: +
       sc_identifier: b
-=== ast-mapping
+=== ast-to-kahuna-code-serialization
 sum = (a float, b float) -> a + b

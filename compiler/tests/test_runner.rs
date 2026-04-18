@@ -1,8 +1,12 @@
-mod ast_mapper_tests;
+mod ast_construction_tests;
+mod ast_to_json_serializer_tests;
+mod ast_to_kahuna_code_serializer_tests;
 mod source_file_parser_tests;
 mod source_file_preprocessor_tests;
 
-use crate::ast_mapper_tests::verify_ast_mapping;
+use crate::ast_construction_tests::verify_ast_construction;
+use crate::ast_to_json_serializer_tests::verify_ast_mapping_by_json;
+use crate::ast_to_kahuna_code_serializer_tests::verify_ast_mapping_by_kahuna_code;
 use crate::source_file_preprocessor_tests::verify_source_file_pre_processing;
 use indexmap::IndexMap;
 use similar::{ChangeTag, TextDiff};
@@ -16,7 +20,9 @@ use std::str::FromStr;
 enum CompilationStep {
     SourceFilePreProcessing,
     SourceFileParsing,
-    AstMapping,
+    AstConstruction,
+    AstToKahunaCodeSerialization,
+    AstToJsonSerialization,
 }
 
 impl FromStr for CompilationStep {
@@ -26,7 +32,8 @@ impl FromStr for CompilationStep {
         match s.trim() {
             "source-file-pre-processing" => Ok(CompilationStep::SourceFilePreProcessing),
             "source-file-parsing" => Ok(CompilationStep::SourceFileParsing),
-            "ast-mapping" => Ok(CompilationStep::AstMapping),
+            "ast-to-kahuna-code-serialization" => Ok(CompilationStep::AstToKahunaCodeSerialization),
+            "ast-to-json-serialization" => Ok(CompilationStep::AstToJsonSerialization),
             other => Err(format!("Unknown compilation step: '{other}'")),
         }
     }
@@ -71,13 +78,47 @@ fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationS
         return results;
     }
 
-    // ----------------------- AST mapping -----------------------
+    // ----------------------- AST construction -----------------------
 
-    let step = CompilationStep::AstMapping;
+    let step = CompilationStep::AstConstruction;
     let source = result.unwrap();
+
+    let result = verify_ast_construction(&mut source.clone());
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+    let ast = result.unwrap();
+
+    // ----------------------- AST mapping tested via Kahuna code -----------------------
+
+    let step = CompilationStep::AstToKahunaCodeSerialization;
     let expected = test_case.sections.get(&step).map(|s| s.as_str());
 
-    let result = verify_ast_mapping(&mut source.clone(), expected);
+    let result = verify_ast_mapping_by_kahuna_code(&mut ast.clone(), expected);
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+
+    // ----------------------- AST mapping tested via JSON -----------------------
+
+    let step = CompilationStep::AstToJsonSerialization;
+    let expected = test_case.sections.get(&step).map(|s| s.as_str());
+
+    let result = verify_ast_mapping_by_json(&mut ast.clone(), expected);
 
     update_results(
         &mut results,
@@ -95,8 +136,8 @@ fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationS
 #[test]
 fn all_cases() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-      .join("tests")
-      .join("cases");
+        .join("tests")
+        .join("cases");
     let cases = load_cases(dir.to_str().unwrap());
 
     assert!(
