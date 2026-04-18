@@ -5,7 +5,7 @@ around it, and seeing how far curiosity can take the whole system.
 
 # Kahuna Studio
 
-Kahuna Studio is an audio programming application in its very early stage.
+Kahuna Studio is a workspace for building interactive audio instruments in its very early state.
 
 ---
 
