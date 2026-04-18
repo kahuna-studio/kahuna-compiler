@@ -1,20 +1,22 @@
+mod ast_mapper_tests;
 mod source_file_parser_tests;
 mod source_file_preprocessor_tests;
 
+use crate::ast_mapper_tests::verify_ast_mapping;
 use crate::source_file_preprocessor_tests::verify_source_file_pre_processing;
 use indexmap::IndexMap;
 use similar::{ChangeTag, TextDiff};
 use source_file_parser_tests::verify_source_file_parsing;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CompilationStep {
     SourceFilePreProcessing,
     SourceFileParsing,
-    ConstructAst,
+    AstMapping,
 }
 
 impl FromStr for CompilationStep {
@@ -24,7 +26,7 @@ impl FromStr for CompilationStep {
         match s.trim() {
             "source-file-pre-processing" => Ok(CompilationStep::SourceFilePreProcessing),
             "source-file-parsing" => Ok(CompilationStep::SourceFileParsing),
-            "constructAst" => Ok(CompilationStep::ConstructAst),
+            "ast-mapping" => Ok(CompilationStep::AstMapping),
             other => Err(format!("Unknown compilation step: '{other}'")),
         }
     }
@@ -69,12 +71,32 @@ fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationS
         return results;
     }
 
+    // ----------------------- AST mapping -----------------------
+
+    let step = CompilationStep::AstMapping;
+    let source = result.unwrap();
+    let expected = test_case.sections.get(&step).map(|s| s.as_str());
+
+    let result = verify_ast_mapping(&mut source.clone(), expected);
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+
     results
 }
 
 #[test]
 fn all_cases() {
-    let dir = Path::new("tests/cases");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+      .join("tests")
+      .join("cases");
     let cases = load_cases(dir.to_str().unwrap());
 
     assert!(
@@ -143,19 +165,7 @@ struct TestCase {
 
 enum CompilationStepResult {
     Success(bool),
-    Failure(CompilationStepFailure),
-}
-
-#[derive(Clone, Debug)]
-struct CompilationStepFailure {
-    error: String,
-    diff: Option<Diff>,
-}
-
-#[derive(Clone, Debug)]
-struct Diff {
-    expected: String,
-    actual: String,
+    Failure(kahuna_compiler::CompilationStepFailure),
 }
 
 fn load_cases(dir: &str) -> Vec<TestCase> {
@@ -202,7 +212,7 @@ fn parse_case(name: String, content: &str) -> TestCase {
 
 fn update_results(
     results: &mut IndexMap<CompilationStep, CompilationStepResult>,
-    result: Result<(), CompilationStepFailure>,
+    result: Result<(), kahuna_compiler::CompilationStepFailure>,
     compilation_step: CompilationStep,
     has_spec: bool,
 ) {

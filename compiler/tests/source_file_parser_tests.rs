@@ -1,8 +1,8 @@
-use crate::{CompilationStepFailure, Diff};
 use kahuna_compiler::compiler::source_file_parser::source_file_parser::Rule;
 use kahuna_compiler::internal_parse_source_file;
-use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
+use kahuna_compiler::CompilationStepFailure;
+use kahuna_compiler::Diff;
 
 pub fn verify_source_file_parsing<'a>(input: &'a str, expected_result: Option<&str>) -> Result<Pairs<'a, Rule>, CompilationStepFailure> {
 
@@ -27,7 +27,7 @@ pub fn verify_source_file_parsing<'a>(input: &'a str, expected_result: Option<&s
   Ok(result.unwrap())
 }
 
-fn format(result: &Result<Pairs<Rule>, Error<Rule>>) -> String {
+fn format(result: &Result<Pairs<Rule>, pest::error::Error<Rule>>) -> String {
   let file_pair = result.clone().unwrap().next().unwrap();
   format_pair(file_pair.clone(), 0)
 }

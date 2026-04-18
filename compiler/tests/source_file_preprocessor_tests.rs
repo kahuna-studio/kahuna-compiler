@@ -1,5 +1,6 @@
-use crate::{CompilationStepFailure, Diff};
 use kahuna_compiler::internal_pre_process;
+use kahuna_compiler::CompilationStepFailure;
+use kahuna_compiler::Diff;
 
 pub fn verify_source_file_pre_processing(input: &str, expected_result: Option<&str>) -> Result<String, CompilationStepFailure> {
 

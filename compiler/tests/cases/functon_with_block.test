@@ -26,3 +26,6 @@ file
         sc_identifier: a
         add: +
         sc_identifier: b
+=== ast-mapping
+sum = (a float, b float) ->
+  a + b

@@ -10,3 +10,5 @@ file
     expression
       literal
         number: 42
+=== ast-mapping
+a = () -> 42

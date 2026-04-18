@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         ));
     }
 
-    let src_dir = package_path.parent().unwrap().join("src").canonicalize()?;
+    let src_dir = package_path.parent().unwrap().join("").canonicalize()?;
     let base_dir = package_path.parent().unwrap().canonicalize()?;
 
     let (tx, rx) = unbounded();
