@@ -1,6 +1,6 @@
-use crate::compiler::ast_construction::ast::basics::File as AstFile;
+use crate::compiler::ast::basics::File as AstFile;
 use crate::compiler::ast_construction::ast_mapper::map_to_ast;
-use crate::compiler::source_file_parser::source_file_parser::{parse_source_file, Rule};
+use crate::compiler::source_file_parser::source_file_parser::{parse_source_file};
 use crate::compiler::source_file_preprocessor::source_file_preprocessor::add_indentation_tags;
 use salsa::Storage;
 use std::cell::RefCell;
@@ -48,7 +48,7 @@ pub struct FileSet {
 }
 
 #[salsa::tracked]
-pub fn file_ast(db: &dyn salsa::Database, file: SourceFile) -> AstFile {
+pub fn get_source_file_ast(db: &dyn salsa::Database, file: SourceFile) -> AstFile {
   push_log("file_ast");
   let contents = file.contents(db);
   let preprocessed = add_indentation_tags(&contents);
@@ -72,15 +72,15 @@ mod tests {
     let mut db = KahunaCompilerDatabase::default();
     let file = make_file(&mut db, "main.module.kh", FileKind::Source);
 
-    file_ast(&db, file);
+    get_source_file_ast(&db, file);
     let first = take_log();
     assert_eq!(first, vec!["file_ast"]);
 
-    file_ast(&db, file);
+    get_source_file_ast(&db, file);
     let second = take_log();
     assert!(second.is_empty());
 
-    file_ast(&db, file);
+    get_source_file_ast(&db, file);
     let third = take_log();
     assert!(third.is_empty());
   }

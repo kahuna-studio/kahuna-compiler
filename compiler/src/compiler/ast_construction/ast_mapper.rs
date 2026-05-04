@@ -1,11 +1,11 @@
 use pest::iterators::{Pair, Pairs};
-use crate::compiler::ast_construction::ast::basics::{Assignment, BlockOrExpression, Expression, File, Literal, PortType, Range, Rate, StreamType, Type};
-use crate::compiler::ast_construction::ast::functions::{Argument, ConstructorCall, FunctionCall, FunctionDeclaration, Parameter};
-use crate::compiler::ast_construction::ast::modules::{InputPort, ModuleDeclaration, OutputPort};
-use crate::compiler::ast_construction::ast::streams::StreamExpression;
-use crate::compiler::ast_construction::ast::streams::StreamOperation::Map;
+use crate::compiler::ast::basics::{Assignment, BlockOrExpression, Expression, File, Literal, PortType, Range, Rate, StreamType, Type};
+use crate::compiler::ast::functions::{Argument, ConstructorCall, FunctionCall, FunctionDeclaration, Parameter};
+use crate::compiler::ast::modules::{InputPort, ModuleDeclaration, OutputPort};
+use crate::compiler::ast::streams::StreamExpression;
+use crate::compiler::ast::streams::StreamOperation::Map;
 use crate::compiler::source_file_parser::source_file_parser::Rule;
-use crate::compiler::ast_construction::ast::streams::StreamOperation;
+use crate::compiler::ast::streams::StreamOperation;
 use crate::compiler::ast_construction::pratt_parser;
 
 pub fn map_to_ast(pairs: &mut Pairs<Rule>) -> Result<File, String> {

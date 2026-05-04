@@ -1,12 +1,10 @@
-use kahuna_compiler::compiler::source_file_parser::source_file_parser::Rule;
-use kahuna_compiler::internal_parse_source_file;
+use crate::compilation_step_test_lib::model::{CompilationStepFailure, Diff};
+use kahuna_compiler::compiler::testing::{parse_source_file, Rule};
 use pest::iterators::{Pair, Pairs};
-use kahuna_compiler::CompilationStepFailure;
-use kahuna_compiler::Diff;
 
 pub fn verify_source_file_parsing<'a>(input: &'a str, expected_result: Option<&str>) -> Result<Pairs<'a, Rule>, CompilationStepFailure> {
 
-  let result = internal_parse_source_file(input);
+  let result = parse_source_file(input);
 
   if result.is_err() {
     return Err(CompilationStepFailure { error: format!("Parse error: {}", result.err().unwrap()), diff: None });

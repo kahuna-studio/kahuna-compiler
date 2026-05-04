@@ -1,10 +1,9 @@
-use kahuna_compiler::compiler::ast_construction::ast::basics::File;
-use kahuna_compiler::compiler::ast_to_kahuna_code_serializer::ast_to_kahuna_code::AstVisitor;
-use kahuna_compiler::{CompilationStepFailure, Diff};
+use crate::compilation_step_test_lib::model::{CompilationStepFailure, Diff};
+use kahuna_compiler::compiler::testing::{AstPrinter, AstVisitor, File};
 
 pub fn verify_ast_mapping_by_kahuna_code(input: &mut File, expected_result: Option<&str>) -> Result<(), CompilationStepFailure> {
 
-  let mut printer = kahuna_compiler::compiler::ast_to_kahuna_code_serializer::ast_to_kahuna_code::AstPrinter::new();
+  let mut printer = AstPrinter::new();
   printer.visit_file(&input);
   let code_generated_from_ast = printer.get_output().to_string();
 

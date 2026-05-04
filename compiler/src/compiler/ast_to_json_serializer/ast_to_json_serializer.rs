@@ -1,13 +1,13 @@
-use crate::compiler::ast_construction::ast::basics::{
+use crate::compiler::ast::basics::{
     Assignment, BlockOrExpression, Expression, File, PortType, Type,
 };
-use crate::compiler::ast_construction::ast::functions::{
+use crate::compiler::ast::functions::{
     Argument, ConstructorCall, FunctionCall, FunctionDeclaration, Parameter,
 };
-use crate::compiler::ast_construction::ast::modules::{
+use crate::compiler::ast::modules::{
     InputPort, ModuleDeclaration, OutputPort as ModuleOutputPort,
 };
-use crate::compiler::ast_construction::ast::streams::{StreamExpression, StreamOperation};
+use crate::compiler::ast::streams::{StreamExpression, StreamOperation};
 use serde_json::{json, Value};
 
 pub struct AstJsonSerializer;

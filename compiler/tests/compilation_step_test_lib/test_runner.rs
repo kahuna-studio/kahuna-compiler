@@ -1,29 +1,13 @@
-mod ast_construction_tests;
-mod ast_to_json_serializer_tests;
-mod ast_to_kahuna_code_serializer_tests;
-mod source_file_parser_tests;
-mod source_file_preprocessor_tests;
-
-use crate::ast_construction_tests::verify_ast_construction;
-use crate::ast_to_json_serializer_tests::verify_ast_mapping_by_json;
-use crate::ast_to_kahuna_code_serializer_tests::verify_ast_mapping_by_kahuna_code;
-use crate::source_file_preprocessor_tests::verify_source_file_pre_processing;
-use indexmap::IndexMap;
-use similar::{ChangeTag, TextDiff};
-use source_file_parser_tests::verify_source_file_parsing;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 use std::str::FromStr;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum CompilationStep {
-    SourceFilePreProcessing,
-    SourceFileParsing,
-    AstConstruction,
-    AstToKahunaCodeSerialization,
-    AstToJsonSerialization,
-}
+use indexmap::IndexMap;
+use crate::compilation_step_test_lib::ast_construction_tests::verify_ast_construction;
+use crate::compilation_step_test_lib::ast_to_json_serializer_tests::verify_ast_mapping_by_json;
+use crate::compilation_step_test_lib::ast_to_kahuna_code_serializer_tests::verify_ast_mapping_by_kahuna_code;
+use crate::compilation_step_test_lib::model::{CompilationStep, CompilationStepFailure, CompilationStepResult, TestCase};
+use crate::compilation_step_test_lib::source_file_parser_tests::verify_source_file_parsing;
+use crate::compilation_step_test_lib::source_file_preprocessor_tests::verify_source_file_pre_processing;
 
 impl FromStr for CompilationStep {
     type Err = String;
@@ -39,7 +23,7 @@ impl FromStr for CompilationStep {
     }
 }
 
-fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
+pub fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
     let mut results: IndexMap<CompilationStep, CompilationStepResult> = IndexMap::new();
 
     // ----------------------- Pre-processing -----------------------
@@ -133,83 +117,9 @@ fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationS
     results
 }
 
-#[test]
-fn all_cases() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("cases");
-    let cases = load_cases(dir.to_str().unwrap());
 
-    assert!(
-        !cases.is_empty(),
-        "No .test files found in {}",
-        dir.display()
-    );
 
-    let mut succeeded = true;
-    let mut results: IndexMap<String, IndexMap<CompilationStep, CompilationStepResult>> =
-        IndexMap::new();
-    for case in cases {
-        let test_case_result = run_test_case(&case);
-        results.insert(case.name, test_case_result);
-    }
-
-    results.iter().for_each(|(name, result)| {
-        let output = format!("Test case '{}'", name);
-        result
-            .iter()
-            .for_each(|(&step, step_result)| match step_result {
-                CompilationStepResult::Success(true) => {
-                    println!("\x1b[32m✅ {} - {:?}\x1b[0m", output, step);
-                }
-                CompilationStepResult::Success(false) => {
-                    println!(
-                        "\x1b[33m✅ {} - {:?} (no specification defined)\x1b[0m",
-                        output, step
-                    );
-                }
-                CompilationStepResult::Failure(failure) => {
-                    succeeded = false;
-                    println!("\x1b[31m❌ {} - {:?}\x1b[0m", output, step);
-                    println!("   Error: {}", failure.error);
-
-                    if failure.diff.is_some() {
-                        let diff = failure.diff.as_ref().unwrap();
-                        println!("   Diff:\n");
-                        let diff = TextDiff::from_lines(diff.expected.clone(), diff.actual.clone());
-
-                        for change in diff.iter_all_changes() {
-                            let sign = match change.tag() {
-                                ChangeTag::Delete => "-",
-                                ChangeTag::Insert => "+",
-                                ChangeTag::Equal => " ",
-                            };
-                            print!("{}{}", sign, change);
-                        }
-                        println!("")
-                    }
-                    println!("");
-                }
-            });
-    });
-
-    if !succeeded {
-        std::panic::resume_unwind(Box::new(()));
-    }
-}
-
-struct TestCase {
-    name: String,
-    source: String,
-    sections: HashMap<CompilationStep, String>,
-}
-
-enum CompilationStepResult {
-    Success(bool),
-    Failure(kahuna_compiler::CompilationStepFailure),
-}
-
-fn load_cases(dir: &str) -> Vec<TestCase> {
+pub fn load_cases(dir: &str) -> Vec<TestCase> {
     let mut cases = Vec::new();
 
     for entry in fs::read_dir(dir).unwrap() {
@@ -253,7 +163,7 @@ fn parse_case(name: String, content: &str) -> TestCase {
 
 fn update_results(
     results: &mut IndexMap<CompilationStep, CompilationStepResult>,
-    result: Result<(), kahuna_compiler::CompilationStepFailure>,
+    result: Result<(), CompilationStepFailure>,
     compilation_step: CompilationStep,
     has_spec: bool,
 ) {

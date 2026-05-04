@@ -1,7 +1,6 @@
 #![allow(unreachable_patterns)]
 
 pub mod compiler;
-pub use compiler::source_file_parser::source_file_parser::parse_source_file as internal_parse;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};

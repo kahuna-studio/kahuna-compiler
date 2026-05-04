@@ -1,7 +1,7 @@
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
-use crate::compiler::ast_construction::ast::basics::{Expression, Literal};
+use crate::compiler::ast::basics::{Expression, Literal};
 use crate::compiler::ast_construction::ast_mapper::{
     parse_constructor_call, parse_function_call, parse_if_else, parse_pipelined_expression,
 };
