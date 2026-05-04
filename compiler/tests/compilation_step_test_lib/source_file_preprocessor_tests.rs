@@ -1,4 +1,4 @@
-use kahuna_compiler::compiler::testing::add_indentation_tags;
+use kahuna_compiler::testing::add_indentation_tags;
 use crate::compilation_step_test_lib::model::{CompilationStepFailure, Diff};
 
 pub fn verify_source_file_pre_processing(input: &str, expected_result: Option<&str>) -> Result<String, CompilationStepFailure> {

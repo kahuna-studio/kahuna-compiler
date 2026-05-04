@@ -1,7 +1,5 @@
 #![allow(unreachable_patterns)]
 
-pub mod compiler;
-
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;

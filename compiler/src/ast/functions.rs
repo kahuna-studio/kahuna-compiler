@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::compiler::ast::basics::{BlockOrExpression, Expression, Type};
+use crate::ast::basics::{BlockOrExpression, Expression, Type};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FunctionDeclaration {

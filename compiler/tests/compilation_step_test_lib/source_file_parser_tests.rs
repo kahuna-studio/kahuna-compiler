@@ -1,5 +1,5 @@
 use crate::compilation_step_test_lib::model::{CompilationStepFailure, Diff};
-use kahuna_compiler::compiler::testing::{parse_source_file, Rule};
+use kahuna_compiler::testing::{parse_source_file, Rule};
 use pest::iterators::{Pair, Pairs};
 
 pub fn verify_source_file_parsing<'a>(input: &'a str, expected_result: Option<&str>) -> Result<Pairs<'a, Rule>, CompilationStepFailure> {

@@ -1,13 +1,13 @@
-use crate::compiler::ast::basics::{
+use crate::ast::basics::{
     Assignment, BlockOrExpression, Expression, File, PortType, Type,
 };
-use crate::compiler::ast::functions::{
+use crate::ast::functions::{
     Argument, ConstructorCall, FunctionCall, FunctionDeclaration, Parameter,
 };
-use crate::compiler::ast::modules::{
+use crate::ast::modules::{
     InputPort, ModuleDeclaration, OutputPort as ModuleOutputPort,
 };
-use crate::compiler::ast::streams::{StreamExpression, StreamOperation};
+use crate::ast::streams::{StreamExpression, StreamOperation};
 
 pub trait AstVisitor {
     fn visit_file(&mut self, file: &File);

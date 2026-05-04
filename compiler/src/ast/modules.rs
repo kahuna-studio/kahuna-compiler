@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::compiler::ast::basics::{Assignment, PortType, StreamType};
+use crate::ast::basics::{Assignment, PortType, StreamType};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModuleDeclaration {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use crate::compiler::ast::functions::{ConstructorCall, FunctionCall, FunctionDeclaration};
-use crate::compiler::ast::modules::ModuleDeclaration;
-use crate::compiler::ast::streams::StreamExpression;
+use crate::ast::functions::{ConstructorCall, FunctionCall, FunctionDeclaration};
+use crate::ast::modules::ModuleDeclaration;
+use crate::ast::streams::StreamExpression;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub enum Type {

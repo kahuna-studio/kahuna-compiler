@@ -1,5 +1,5 @@
 use crate::compilation_step_test_lib::model::{CompilationStepFailure, Diff};
-use kahuna_compiler::compiler::testing::{AstJsonSerializer, File};
+use kahuna_compiler::testing::{AstJsonSerializer, File};
 
 pub fn verify_ast_mapping_by_json(input: &mut File, expected_result: Option<&str>) -> Result<(), CompilationStepFailure> {
 

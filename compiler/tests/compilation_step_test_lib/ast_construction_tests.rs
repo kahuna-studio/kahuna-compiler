@@ -1,5 +1,5 @@
 use crate::compilation_step_test_lib::model::CompilationStepFailure;
-use kahuna_compiler::compiler::testing::{map_to_ast, File, Rule};
+use kahuna_compiler::testing::{map_to_ast, File, Rule};
 use pest::iterators::Pairs;
 
 pub fn verify_ast_construction(input: &mut Pairs<Rule>) -> Result<File, CompilationStepFailure> {

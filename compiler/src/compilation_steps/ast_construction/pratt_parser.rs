@@ -1,11 +1,11 @@
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
-use crate::compiler::ast::basics::{Expression, Literal};
-use crate::compiler::ast_construction::ast_mapper::{
+use crate::ast::basics::{Expression, Literal};
+use crate::compilation_steps::ast_construction::ast_mapper::{
     parse_constructor_call, parse_function_call, parse_if_else, parse_pipelined_expression,
 };
-use crate::compiler::source_file_parser::source_file_parser::Rule;
+use crate::compilation_steps::source_file_parser::source_file_parser::Rule;
 
 lazy_static::lazy_static! {
     pub static ref PRATT: PrattParser<Rule> = PrattParser::new()

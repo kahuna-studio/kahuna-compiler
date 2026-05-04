@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::compiler::ast::basics::Expression;
+use crate::ast::basics::Expression;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StreamExpression {
