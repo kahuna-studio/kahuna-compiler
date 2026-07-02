@@ -1,4 +1,4 @@
-use crate::std_lib::midi::MidiEvent;
+use crate::host::midi::MidiEvent;
 
 pub struct GateEnvelope {
     gate: f32,

@@ -1,4 +1,4 @@
-use crate::std_lib::midi::MidiEvent;
+use crate::host::midi::MidiEvent;
 
 pub fn midi_to_frequency(midi: &[MidiEvent]) -> Option<f32> {
     midi

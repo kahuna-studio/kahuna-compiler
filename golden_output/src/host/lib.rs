@@ -2,8 +2,7 @@
 // host/lib.rs — runtime types shared across patch and modules
 // ============================================================
 
-use std::any::Any;
-use crate::std_lib::midi::MidiEvent;
+use crate::host::midi::MidiEvent;
 
 // ============================================================
 // MIDI I/O — standalone target implementation
@@ -12,7 +11,7 @@ use crate::std_lib::midi::MidiEvent;
 // ============================================================
 
 use midir::{MidiInput, MidiInputConnection};
-use crate::std_lib::midi::MidiQueue;
+use crate::host::midi::MidiQueue;
 
 pub fn start_midi(midi_queue: MidiQueue) -> Option<MidiInputConnection<()>> {
     let midi_in = MidiInput::new("kahuna_synth").ok()?;

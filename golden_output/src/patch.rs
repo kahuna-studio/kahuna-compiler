@@ -1,10 +1,10 @@
 use crate::host::input_mapping::midi_to_frequency::midi_to_frequency;
-use crate::host::io_nodes::AudioOut;
+use crate::host::io_nodes::{AudioOut, MidiIn};
 use crate::host::polyphony::voice_allocator::VoiceAllocator;
 use crate::host::lib::PolyBuffer;
 use crate::modules::gate_envelope::GateEnvelope;
 use crate::modules::sine_osc::SineOsc;
-use crate::std_lib::midi::{MidiEvent, MidiQueue};
+use crate::host::midi::{MidiEvent, MidiQueue};
 use crate::std_lib::operators::Multiply;
 
 const VOICES: usize = 8;
@@ -37,10 +37,10 @@ impl PatchState {
 pub struct Patch {
     sample_rate: u32,
     max_buffer_size: usize,
-    midi_queue: MidiQueue,
 
     voice_allocator_0: VoiceAllocator,
 
+    midi_in_0: MidiIn,
     sine_osc_0: Vec<SineOsc>,
     gate_envelope_0: Vec<GateEnvelope>,
     multiply_0: Vec<Multiply>,
@@ -59,9 +59,10 @@ impl Patch {
         Self {
             sample_rate,
             max_buffer_size,
-            midi_queue,
 
             voice_allocator_0: VoiceAllocator::new(VOICES),
+
+            midi_in_0: MidiIn::new(midi_queue),
 
             sine_osc_0: (0..VOICES)
                 .map(|_| SineOsc::new(sample_rate, max_buffer_size))
@@ -84,9 +85,8 @@ impl Patch {
     pub fn process(&mut self, host_audio_out: &mut [f32], channels: usize) {
         let frames = (host_audio_out.len() / channels).min(self.max_buffer_size);
 
-        self.state.midi_in_0__out.clear();
-        self.state.midi_in_0__out.extend(
-            self.midi_queue.lock().unwrap().drain(..)
+        self.midi_in_0.process(
+            &mut self.state.midi_in_0__out,
         );
 
         self.voice_allocator_0.process(

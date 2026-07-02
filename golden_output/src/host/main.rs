@@ -4,7 +4,7 @@ use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BufferSize, FrameCount
 
 use crate::host::lib::start_midi;
 use crate::patch::Patch;
-use crate::std_lib::midi::MidiEvent;
+use crate::host::midi::MidiEvent;
 
 pub fn main() {
     let max_buffer_size: usize = 2048;

@@ -9,7 +9,7 @@
 // and outputs like any other.
 // ============================================================
 
-use crate::std_lib::midi::MidiEvent;
+use crate::host::midi::{MidiEvent, MidiQueue};
 
 // ----------------------------------------------------------
 // MidiIn — produces the MIDI event buffer for the current tick.
@@ -18,24 +18,22 @@ use crate::std_lib::midi::MidiEvent;
 // ----------------------------------------------------------
 
 pub struct MidiIn {
-    pub pending: Vec<MidiEvent>,
+    midi_queue: MidiQueue,
 }
 
 impl MidiIn {
-    pub fn new() -> Self {
+    pub fn new(midi_queue: MidiQueue) -> Self {
         Self {
-            pending: Vec::new(),
+            midi_queue,
         }
     }
 
-    // called by host BEFORE patch.process()
-    pub fn set_events(&mut self, events: Vec<MidiEvent>) {
-        self.pending = events;
-    }
+    pub fn process(&self, midi_events: &mut Vec<MidiEvent>) {
 
-    // called by generated patch code
-    pub fn take_events(&mut self) -> Vec<MidiEvent> {
-        std::mem::take(&mut self.pending)
+        midi_events.clear();
+        midi_events.extend(
+            self.midi_queue.lock().unwrap().drain(..)
+        );
     }
 }
 

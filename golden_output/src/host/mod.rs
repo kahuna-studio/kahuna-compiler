@@ -3,3 +3,4 @@ pub mod main;
 pub mod io_nodes;
 pub mod polyphony;
 pub mod input_mapping;
+pub mod midi;
