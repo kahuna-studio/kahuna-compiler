@@ -7,26 +7,25 @@ use crate::modules::sine_osc::SineOsc;
 use crate::host::midi::{MidiEvent, MidiQueue};
 use crate::std_lib::operators::Multiply;
 
+
 const VOICES: usize = 8;
 
+#[allow(non_snake_case)]
 pub struct PatchState {
-    pub midi_in_0__out: Vec<MidiEvent>,
-    pub polyphony_start_0__out: Vec<Vec<MidiEvent>>,
-
-    pub sine_osc_0__out: PolyBuffer<f32>,
-    pub gate_envelope_0__out: PolyBuffer<f32>,
-    pub multiply_0__out: PolyBuffer<f32>,
+    midi_in_0__out: Vec<MidiEvent>,
+    polyphony_start_0__out: Vec<Vec<MidiEvent>>,
+    sine_osc_0__out: PolyBuffer<f32>,
+    gate_envelope_0__out: PolyBuffer<f32>,
+    multiply_0__out: PolyBuffer<f32>,
 }
 
 impl PatchState {
     pub fn new(max_buffer_size: usize) -> Self {
         Self {
             midi_in_0__out: Vec::new(),
-
             polyphony_start_0__out: (0..VOICES)
                 .map(|_| Vec::new())
                 .collect(),
-
             sine_osc_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             gate_envelope_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             multiply_0__out: PolyBuffer::new(VOICES, max_buffer_size),
@@ -35,7 +34,6 @@ impl PatchState {
 }
 
 pub struct Patch {
-    sample_rate: u32,
     max_buffer_size: usize,
 
     voice_allocator_0: VoiceAllocator,
@@ -57,7 +55,6 @@ impl Patch {
         midi_queue: MidiQueue,
     ) -> Self {
         Self {
-            sample_rate,
             max_buffer_size,
 
             voice_allocator_0: VoiceAllocator::new(VOICES),

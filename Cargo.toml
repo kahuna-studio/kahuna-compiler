@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "compiler",
+    "golden_output"
 ]
 resolver = "3"
