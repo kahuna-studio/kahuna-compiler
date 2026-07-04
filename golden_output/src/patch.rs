@@ -42,7 +42,6 @@ pub struct Patch {
     sine_osc_0: Vec<SineOsc>,
     gate_envelope_0: Vec<GateEnvelope>,
     multiply_0: Vec<Multiply>,
-
     audio_out_0: AudioOut,
 
     state: PatchState,
@@ -70,7 +69,7 @@ impl Patch {
                 .collect(),
 
             multiply_0: (0..VOICES)
-                .map(|_| Multiply::new(sample_rate, max_buffer_size, 2))
+                .map(|_| Multiply::new(sample_rate, max_buffer_size))
                 .collect(),
 
             audio_out_0: AudioOut::new(sample_rate, max_buffer_size),
@@ -103,13 +102,14 @@ impl Patch {
             );
 
             self.multiply_0[voice].process(
-                &self.state.sine_osc_0__out.voice(voice)[..frames],
-                &self.state.gate_envelope_0__out.voice(voice)[..frames],
+                &[
+                    &self.state.sine_osc_0__out.voice(voice)[..frames],
+                    &self.state.gate_envelope_0__out.voice(voice)[..frames],
+                ],
                 &mut self.state.multiply_0__out.voice_mut(voice)[..frames],
             );
         }
 
-        // merge: sum all voices, normalised by voice count
         self.audio_out_0.out_0[..frames].fill(0.0);
         self.audio_out_0.out_1[..frames].fill(0.0);
 
