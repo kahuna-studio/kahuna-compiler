@@ -20,11 +20,10 @@ pub fn main() {
     stream_config.buffer_size = BufferSize::Fixed(max_buffer_size as FrameCount);
 
     let sample_rate = stream_config.sample_rate;
-    let channels = stream_config.channels as usize;
 
     eprintln!("[Audio] Device: {}", device.description().expect("No audio device description"));
     eprintln!("[Audio] Sample rate: {}", sample_rate);
-    eprintln!("[Audio] Channels: {}", channels);
+    eprintln!("[Audio] Channels: {}", "Hardcoded to 2 so far");
     eprintln!("[Audio] Config: {:?}", stream_config);
 
     let midi_queue = Arc::new(Mutex::new(Vec::<MidiEvent>::new()));
@@ -41,7 +40,7 @@ pub fn main() {
         .build_output_stream(
             stream_config,
             move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                patch.process(output, channels);
+                patch.process(output);
             },
             |err| eprintln!("[Audio] Error: {}", err),
             None,

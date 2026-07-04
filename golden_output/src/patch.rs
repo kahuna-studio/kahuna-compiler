@@ -82,8 +82,9 @@ impl Patch {
         }
     }
 
-    pub fn process(&mut self, host_audio_out: &mut [f32], channels: usize) {
-        let frames = (host_audio_out.len() / channels).min(self.max_buffer_size);
+    pub fn process(&mut self, host_audio_out: &mut [f32]) {
+        
+        let frames = (host_audio_out.len() / 2).min(self.max_buffer_size);
 
         self.midi_in_0.process(
             &mut self.state.midi_in_0__out,
@@ -122,18 +123,10 @@ impl Patch {
             }
         }
 
-        self.audio_out_0.out_0[..frames].fill(0.0);
-        self.audio_out_0.out_1[..frames].fill(0.0);
-
-        for frame in 0..frames {
-            for ch in 0..channels {
-                let sample = if ch == 0 {
-                    self.state.polyphony_end_0__out[frame]
-                } else {
-                    self.state.polyphony_end_0__out[frame]
-                };
-                host_audio_out[frame * channels + ch] = sample;
-            }
-        }
+        self.audio_out_0.process(
+            &self.state.polyphony_end_0__out[..frames],
+            &self.state.polyphony_end_0__out[..frames],
+            &mut host_audio_out[..frames * 2]
+        );
     }
 }

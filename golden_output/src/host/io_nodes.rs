@@ -39,15 +39,27 @@ impl MidiIn {
 
 
 pub struct AudioOut {
-    pub out_0: Vec<f32>,
-    pub out_1: Vec<f32>,
 }
 
 impl AudioOut {
-    pub fn new(_sample_rate: u32, max_buffer_size: usize) -> Self {
+    pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
         Self {
-            out_0: vec![0.0f32; max_buffer_size],
-            out_1: vec![0.0f32; max_buffer_size],
+        }
+    }
+
+    pub(crate) fn process(&self, left_in: &[f32], right_in: &[f32], host_audio_out: &mut [f32]) {
+
+        let frames = host_audio_out.len() / 2;
+
+        for frame in 0..frames {
+            for ch in 0..2 {
+                let sample = if ch == 0 {
+                    left_in[frame]
+                } else {
+                    right_in[frame]
+                };
+                host_audio_out[frame * 2 + ch] = sample;
+            }
         }
     }
 }
