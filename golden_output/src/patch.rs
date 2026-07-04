@@ -12,8 +12,10 @@ const VOICES: usize = 8;
 
 #[allow(non_snake_case)]
 pub struct PatchState {
-    midi_in_0__out: Vec<MidiEvent>,
     polyphony_start_0__out: Vec<Vec<MidiEvent>>,
+    polyphony_end_0__out: Vec<f32>,
+
+    midi_in_0__out: Vec<MidiEvent>,
     sine_osc_0__out: PolyBuffer<f32>,
     gate_envelope_0__out: PolyBuffer<f32>,
     multiply_0__out: PolyBuffer<f32>,
@@ -22,10 +24,12 @@ pub struct PatchState {
 impl PatchState {
     pub fn new(max_buffer_size: usize) -> Self {
         Self {
-            midi_in_0__out: Vec::new(),
             polyphony_start_0__out: (0..VOICES)
                 .map(|_| Vec::new())
                 .collect(),
+            polyphony_end_0__out: vec![0.0; max_buffer_size],
+
+            midi_in_0__out: Vec::new(),
             sine_osc_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             gate_envelope_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             multiply_0__out: PolyBuffer::new(VOICES, max_buffer_size),
@@ -110,23 +114,23 @@ impl Patch {
             );
         }
 
-        self.audio_out_0.out_0[..frames].fill(0.0);
-        self.audio_out_0.out_1[..frames].fill(0.0);
-
+        self.state.polyphony_end_0__out[..frames].fill(0.0);
         for voice in 0..VOICES {
             let src = self.state.multiply_0__out.voice(voice);
             for i in 0..frames {
-                self.audio_out_0.out_0[i] += src[i] / VOICES as f32;
-                self.audio_out_0.out_1[i] += src[i] / VOICES as f32;
+                self.state.polyphony_end_0__out[i] += src[i] / VOICES as f32;
             }
         }
+
+        self.audio_out_0.out_0[..frames].fill(0.0);
+        self.audio_out_0.out_1[..frames].fill(0.0);
 
         for frame in 0..frames {
             for ch in 0..channels {
                 let sample = if ch == 0 {
-                    self.audio_out_0.out_0[frame]
+                    self.state.polyphony_end_0__out[frame]
                 } else {
-                    self.audio_out_0.out_1[frame]
+                    self.state.polyphony_end_0__out[frame]
                 };
                 host_audio_out[frame * channels + ch] = sample;
             }
