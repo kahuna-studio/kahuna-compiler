@@ -9,8 +9,8 @@ impl GateEnvelope {
     pub fn process(
         &mut self,
         gate: f32,
-        output: &mut [f32],
+        envelope: &mut [f32],
     ) {
-        output.fill(gate);
+        envelope.fill(gate);
     }
 }

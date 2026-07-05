@@ -19,7 +19,7 @@ pub struct PatchState {
     midi_events_to_frequency_parameter_0__out: Vec<Option<f32>>,
     sine_osc_0__out: PolyBuffer<f32>,
     midi_events_to_gate_parameter_0__out: Vec<f32>,
-    gate_envelope_0__out: PolyBuffer<f32>,
+    gate_envelope_0__envelope: PolyBuffer<f32>,
     multiply_0__out: PolyBuffer<f32>,
     merge__out: Vec<f32>,
 }
@@ -34,7 +34,7 @@ impl PatchState {
             midi_events_to_frequency_parameter_0__out:vec![None; VOICES],
             sine_osc_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             midi_events_to_gate_parameter_0__out:vec![0.0; VOICES],
-            gate_envelope_0__out: PolyBuffer::new(VOICES, max_buffer_size),
+            gate_envelope_0__envelope: PolyBuffer::new(VOICES, max_buffer_size),
             multiply_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             merge__out: vec![0.0; max_buffer_size],
         }
@@ -127,13 +127,13 @@ impl Patch {
 
             self.gate_envelope_0[voice].process(
                 self.state.midi_events_to_gate_parameter_0__out[voice],
-                &mut self.state.gate_envelope_0__out.voice_mut(voice)[..frames],
+                &mut self.state.gate_envelope_0__envelope.voice_mut(voice)[..frames],
             );
 
             self.multiply_0[voice].process(
                 &[
                     &self.state.sine_osc_0__out.voice(voice)[..frames],
-                    &self.state.gate_envelope_0__out.voice(voice)[..frames],
+                    &self.state.gate_envelope_0__envelope.voice(voice)[..frames],
                 ],
                 &mut self.state.multiply_0__out.voice_mut(voice)[..frames],
             );
