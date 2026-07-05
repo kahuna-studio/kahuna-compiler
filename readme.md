@@ -18,15 +18,15 @@ Please find and introduction to Kahuna Studio in the main repository: [Kahuna St
 
 ## Language Documentation
 
-[Modules](./docs/01-modules.md) \
-[Ports](./docs/02-ports.md) \
-[Streams](./docs/03-streams.md) \
-[Projections](./docs/04-projections.md) \
-[Patches](./docs/05-patches.md) \
-[Basics](./docs/06-basics.md) \
-[Types](./docs/08-types.md) \
-[Functions](./docs/09-functions.md) \
-[Visibility](./docs/10-visibility.md)
+[Modules](docs/language/01-modules.md) \
+[Ports](docs/language/02-ports.md) \
+[Streams](docs/language/03-streams.md) \
+[Projections](docs/language/04-projections.md) \
+[Patches](docs/language/05-patches.md) \
+[Basics](docs/language/06-basics.md) \
+[Types](docs/language/08-types.md) \
+[Functions](docs/language/09-functions.md) \
+[Visibility](docs/language/10-visibility.md)
 
 ---
 
