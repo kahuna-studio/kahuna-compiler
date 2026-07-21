@@ -3,27 +3,40 @@ mod compilation_step_test_lib;
 use std::path::PathBuf;
 use indexmap::IndexMap;
 use similar::{ChangeTag, TextDiff};
-use crate::compilation_step_test_lib::model::{CompilationStep, CompilationStepResult};
-use crate::compilation_step_test_lib::test_runner::{load_cases, run_test_case};
+use crate::compilation_step_test_lib::model::{CompilationStep, CompilationStepResult, FileType};
+use crate::compilation_step_test_lib::test_runner::{load_cases, run_patch_code_test_case, run_source_code_test_case};
 
 #[test]
 fn compilation_step_tests() {
   let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     .join("tests")
     .join("compilation_step_test_cases");
-  let cases = load_cases(dir.to_str().unwrap());
+  let source_code_dir = dir.join("source_code");
+  let patch_code_dir = dir.join("patch_code");
+  
+  let source_code_cases = load_cases(FileType::SourceCode, source_code_dir.to_str().unwrap());
+  let patch_code_cases = load_cases(FileType::PatchCode, patch_code_dir.to_str().unwrap());
 
   assert!(
-    !cases.is_empty(),
-    "No .test files found in {}",
-    dir.display()
+    !source_code_cases.is_empty(),
+    "No *.test files found in {}",
+    source_code_dir.display()
+  );
+  assert!(
+    !patch_code_cases.is_empty(),
+    "No *.test files found in {}",
+    patch_code_dir.display()
   );
 
   let mut succeeded = true;
   let mut results: IndexMap<String, IndexMap<CompilationStep, CompilationStepResult>> =
     IndexMap::new();
-  for case in cases {
-    let test_case_result = run_test_case(&case);
+  for case in source_code_cases {
+    let test_case_result = run_source_code_test_case(&case);
+    results.insert(case.name, test_case_result);
+  }
+  for case in patch_code_cases {
+    let test_case_result = run_patch_code_test_case(&case);
     results.insert(case.name, test_case_result);
   }
 

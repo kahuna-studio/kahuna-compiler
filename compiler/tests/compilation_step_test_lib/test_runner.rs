@@ -1,29 +1,15 @@
 use std::collections::HashMap;
 use std::fs;
-use std::str::FromStr;
 use indexmap::IndexMap;
-use crate::compilation_step_test_lib::ast_construction_tests::verify_ast_construction;
-use crate::compilation_step_test_lib::ast_to_json_serializer_tests::verify_ast_mapping_by_json;
-use crate::compilation_step_test_lib::ast_to_kahuna_code_serializer_tests::verify_ast_mapping_by_kahuna_code;
-use crate::compilation_step_test_lib::model::{CompilationStep, CompilationStepFailure, CompilationStepResult, TestCase};
-use crate::compilation_step_test_lib::source_file_parser_tests::verify_source_file_parsing;
-use crate::compilation_step_test_lib::source_file_preprocessor_tests::verify_source_file_pre_processing;
+use crate::compilation_step_test_lib::model::{CompilationStep, CompilationStepFailure, CompilationStepResult, FileType, TestCase};
+use crate::compilation_step_test_lib::steps::ast_construction_tests::verify_ast_construction;
+use crate::compilation_step_test_lib::steps::ast_to_json_serializer_tests::verify_ast_mapping_by_json;
+use crate::compilation_step_test_lib::steps::ast_to_kahuna_code_serializer_tests::verify_ast_mapping_by_kahuna_code;
+use crate::compilation_step_test_lib::steps::patch_code_parser_tests::verify_patch_code_parsing;
+use crate::compilation_step_test_lib::steps::source_file_parser_tests::verify_source_file_parsing;
+use crate::compilation_step_test_lib::steps::source_file_preprocessor_tests::verify_source_file_pre_processing;
 
-impl FromStr for CompilationStep {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim() {
-            "source-file-pre-processing" => Ok(CompilationStep::SourceFilePreProcessing),
-            "source-file-parsing" => Ok(CompilationStep::SourceFileParsing),
-            "ast-to-kahuna-code-serialization" => Ok(CompilationStep::AstToKahunaCodeSerialization),
-            "ast-to-json-serialization" => Ok(CompilationStep::AstToJsonSerialization),
-            other => Err(format!("Unknown compilation step: '{other}'")),
-        }
-    }
-}
-
-pub fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
+pub fn run_source_code_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
     let mut results: IndexMap<CompilationStep, CompilationStepResult> = IndexMap::new();
 
     // ----------------------- Pre-processing -----------------------
@@ -118,8 +104,32 @@ pub fn run_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, Compilat
 }
 
 
+pub fn run_patch_code_test_case(test_case: &TestCase) -> IndexMap<CompilationStep, CompilationStepResult> {
+    let mut results: IndexMap<CompilationStep, CompilationStepResult> = IndexMap::new();
 
-pub fn load_cases(dir: &str) -> Vec<TestCase> {
+    // ----------------------- Parsing -----------------------
+
+    let step = CompilationStep::PatchCodeParsing;
+    let source = test_case.source.clone();
+    let expected = test_case.sections.get(&step).map(|s| s.as_str());
+
+    let result = verify_patch_code_parsing(&source, expected);
+
+    update_results(
+        &mut results,
+        result.clone().map(|_| ()),
+        step,
+        expected.is_some(),
+    );
+    if result.is_err() {
+        return results;
+    }
+
+    results
+}
+
+
+pub fn load_cases(file_type: FileType, dir: &str) -> Vec<TestCase> {
     let mut cases = Vec::new();
 
     for entry in fs::read_dir(dir).unwrap() {

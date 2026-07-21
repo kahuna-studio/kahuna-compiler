@@ -8,3 +8,5 @@ pub use crate::compilation_steps::source_file_preprocessor::source_file_preproce
 pub use crate::compilation_steps::source_file_parser::source_file_parser::Rule;
 pub use crate::compilation_steps::ast_to_json_serializer::ast_to_json_serializer::AstJsonSerializer;
 pub use crate::compilation_steps::ast_to_kahuna_code_serializer::ast_to_kahuna_code::{AstPrinter, AstVisitor};
+pub use crate::compilation_steps::patch_code_parser::parse_patch_code;
+pub use crate::compilation_steps::patch_code_parser::graph::{PatchGraph, NodeKind, Edge};

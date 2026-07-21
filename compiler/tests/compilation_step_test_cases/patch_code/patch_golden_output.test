@@ -1,0 +1,173 @@
+patch Simple_Synth:
+
+  patch:
+
+    (midi_in:0).note_events -> in.{poly}
+    {poly}.out -> midi_event_to_frequency_parameter -> frequency.[Sine_Osc:0]
+    [Sine_Osc:0].out -> in.0.[Multiply:0]
+    {poly}.out -> midi_event_to_gate_parameter -> gate.[Gate_Envelope:0]
+    [Gate_Envelope:0].envelope -> in.1.[Multiply:0]
+    [Multiply:0].out -> in.{merge}
+    {merge}.out -> left.(audio_out:0)
+    {merge}.out -> right.(audio_out:0)
+
+=== patch-code-parsing
+{
+  "name": "Simple_Synth",
+  "nodes": [
+    {
+      "id": 0,
+      "kind": "Interface",
+      "interface_type": "midi_in",
+      "index": 0
+    },
+    {
+      "id": 1,
+      "kind": "Poly"
+    },
+    {
+      "id": 2,
+      "kind": "Converter",
+      "converter_type": "midi_event_to_frequency_parameter",
+      "index": 0
+    },
+    {
+      "id": 3,
+      "kind": "Module",
+      "module_type": "Sine_Osc",
+      "index": 0
+    },
+    {
+      "id": 4,
+      "kind": "Module",
+      "module_type": "Multiply",
+      "index": 0
+    },
+    {
+      "id": 5,
+      "kind": "Converter",
+      "converter_type": "midi_event_to_gate_parameter",
+      "index": 0
+    },
+    {
+      "id": 6,
+      "kind": "Module",
+      "module_type": "Gate_Envelope",
+      "index": 0
+    },
+    {
+      "id": 7,
+      "kind": "Merge"
+    },
+    {
+      "id": 8,
+      "kind": "Interface",
+      "interface_type": "audio_out",
+      "index": 0
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": 0,
+        "port": "note_events"
+      },
+      "to": {
+        "node": 1,
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": 1,
+        "port": "out"
+      },
+      "to": {
+        "node": 2,
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": 2,
+        "port": "out"
+      },
+      "to": {
+        "node": 3,
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": 3,
+        "port": "out"
+      },
+      "to": {
+        "node": 4,
+        "port": "in",
+        "index": 0
+      }
+    },
+    {
+      "from": {
+        "node": 1,
+        "port": "out"
+      },
+      "to": {
+        "node": 5,
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": 5,
+        "port": "out"
+      },
+      "to": {
+        "node": 6,
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "port": "envelope"
+      },
+      "to": {
+        "node": 4,
+        "port": "in",
+        "index": 1
+      }
+    },
+    {
+      "from": {
+        "node": 4,
+        "port": "out"
+      },
+      "to": {
+        "node": 7,
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "port": "out"
+      },
+      "to": {
+        "node": 8,
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "port": "out"
+      },
+      "to": {
+        "node": 8,
+        "port": "right"
+      }
+    }
+  ]
+}

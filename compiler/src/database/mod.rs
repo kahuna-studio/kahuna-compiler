@@ -5,6 +5,8 @@ use crate::compilation_steps::source_file_preprocessor::source_file_preprocessor
 use salsa::Storage;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use crate::compilation_steps::patch_code_parser::graph::PatchGraph;
+use crate::compilation_steps::patch_code_parser::parse_patch_code;
 
 thread_local! {
     static LOG: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
@@ -56,6 +58,15 @@ pub fn get_source_file_ast(db: &dyn salsa::Database, file: SourceFile) -> AstFil
   let ast = map_to_ast(&mut pairs).expect("ast construction failed");
 
   ast
+}
+
+#[salsa::tracked]
+pub fn get_patch_graph(db: &dyn salsa::Database, file: SourceFile) -> PatchGraph {
+  push_log("patch_file_graph");
+  let contents = file.contents(db);
+  let patch_graph = parse_patch_code(&contents).expect("parse failed");
+
+  patch_graph
 }
 
 

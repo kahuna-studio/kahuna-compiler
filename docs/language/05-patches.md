@@ -10,7 +10,7 @@ diffs and merge branches.
         (midi_in:0).note_events -> in.{poly}
         {poly}.out -> midi_event_to_frequency_parameter -> frequency.[Sine_Osc:0]
         [Sine_Osc:0].out -> in.0.[Multiply:0]
-        {poly:0}.out -> midi_event_to_gate_parameter -> gate.[Gate_Envelope:0]
+        {poly}.out -> midi_event_to_gate_parameter -> gate.[Gate_Envelope:0]
         [Gate_Envelope:0].envelope -> in.1.[Multiply:0]
         [Multiply:1].out -> in.{merge}
         {merge}.out -> left.(audio_out:0)
