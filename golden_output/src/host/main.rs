@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BufferSize, FrameCount, StreamConfig};
@@ -53,7 +54,7 @@ pub fn main() {
     stream.play().expect("Failed to start stream");
 
     write_manifest();
-    
+
     eprintln!("[Kahuna] Running. Press Enter to quit.");
 
     let mut buf = String::new();
@@ -65,6 +66,7 @@ fn write_manifest() {
         ("GateEnvelope", GateEnvelope::PORTS.iter().map(Into::into).collect()),
     ];
     let json = serde_json::to_string_pretty(&modules).unwrap();
-    std::fs::write("modules.manifest.json", json).expect("failed to write manifest");
-    eprintln!("[Kahuna] Wrote modules.manifest.json");
+
+    eprintln!("[Kahuna] Module interfaces:");
+    std::io::stdout().write(json.as_bytes()).unwrap();
 }
