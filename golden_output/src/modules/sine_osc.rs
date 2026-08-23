@@ -1,33 +1,81 @@
-use std::f32::consts::PI;
 use crate::std_lib::phase_generators::AudioRatePhase;
+use kahuna_module::{kahuna_module, ModuleEnv, Range, Rate};
+use std::f32::consts::PI;
 
-pub struct SineOsc {
+kahuna_module! {
+    struct SineOsc {
+        pub phase: AudioRatePhase,
+        pub frequency: f32,
+    }
 
-    phase: AudioRatePhase,
-    frequency: f32,
+    inputs {
+        @frequency: Option<f32> [rate = Rate::ControlRate, range = Range::Float(20.0, 20000.0)],
+    }
+
+    outputs {
+        ~out: f32 [rate = Rate::AudioRate, range = Range::Float(-1.0, 1.0)],
+    }
 }
 
 impl SineOsc {
-    pub fn new(sample_rate: u32, _max_buffer_size: usize) -> Self {
-        Self {
-            phase: AudioRatePhase::new(sample_rate),
-            frequency: 440.0,
-        }
+    pub fn init(&mut self, env: &ModuleEnv) {
+        self.phase = AudioRatePhase::new(env.sample_rate);
+        self.frequency = 440.0;
     }
 
-    pub fn process(
-        &mut self,
-        frequency: Option<f32>,
-        out: &mut [f32],
-    ) {
-        if let Some(freq) = frequency {
+    pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
+        if let Some(freq) = inputs.frequency {
             self.frequency = freq;
+        } else {
+
         }
 
-        self.phase.process(self.frequency, out);
+        self.phase.process(self.frequency, outputs.out);
 
-        for x in out.iter_mut() {
+        for x in outputs.out.iter_mut() {
             *x = (*x * 2.0 * PI).sin();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kahuna_module::{PortDir, PortKind, PortType, KahunaModule};
+    use super::*;
+
+    #[test]
+    fn test_ports_reflection() {
+        assert_eq!(SineOsc::PORTS.len(), 2);
+
+        let freq_port = &SineOsc::PORTS[0];
+        assert_eq!(freq_port.name, "frequency");
+        assert_eq!(freq_port.dir, PortDir::Input);
+        assert_eq!(freq_port.kind, PortKind::Parameter);
+        assert_eq!(freq_port.rate, Some(Rate::ControlRate));
+        assert_eq!(freq_port.range, Some(Range::Float(20.0, 20000.0)));
+        assert!(freq_port.port_type.matches(&PortType::of::<Option<f32>>()));
+
+        let out_port = &SineOsc::PORTS[1];
+        assert_eq!(out_port.name, "out");
+        assert_eq!(out_port.dir, PortDir::Output);
+        assert_eq!(out_port.kind, PortKind::Signal);
+        assert_eq!(out_port.rate, Some(Rate::AudioRate));
+        assert_eq!(out_port.range, Some(Range::Float(-1.0, 1.0)));
+        assert!(out_port.port_type.matches(&PortType::of::<f32>()));
+    }
+
+    #[test]
+    fn test_dsp_process() {
+        let env = ModuleEnv { sample_rate: 48000, max_buffer_size: 256 };
+        let mut osc = SineOsc::new(&env);
+
+        let mut buffer = [0.0f32; 64];
+        let inputs = Inputs { frequency: Some(440.0), _phantom: std::marker::PhantomData };
+        let mut outputs = Outputs { out: &mut buffer, _phantom: std::marker::PhantomData };
+
+        osc.process(&inputs, &mut outputs);
+
+        // First sample starts at sin(0) = 0
+        assert!((buffer[0] - 0.0).abs() < 1e-5);
     }
 }

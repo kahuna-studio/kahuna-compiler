@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct AudioRatePhase {
     sample_rate: u32,
     phase: f32,

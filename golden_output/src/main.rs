@@ -1,8 +1,8 @@
 mod host;
-mod std_lib;
-mod patch;
 mod modules;
+mod patch;
+mod std_lib;
 
 fn main() {
-        host::main::main();
+    host::main::main();
 }

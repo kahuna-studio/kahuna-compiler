@@ -1,19 +1,18 @@
-use crate::std_lib::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use crate::host::io_nodes::{AudioOut, MidiIn};
-use crate::host::polyphony::voice_allocator::VoiceAllocator;
 use crate::host::lib::PolyBuffer;
-use crate::modules::gate_envelope::GateEnvelope;
-use crate::modules::sine_osc::SineOsc;
 use crate::host::midi::{MidiEvent, MidiQueue};
+use crate::host::polyphony::voice_allocator::VoiceAllocator;
+use crate::modules::gate_envelope::{self, GateEnvelope};
+use crate::modules::sine_osc::{self, SineOsc};
+use crate::std_lib::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use crate::std_lib::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
 use crate::std_lib::operators::Multiply;
-
+use kahuna_module::{ModuleEnv, KahunaModule};
 
 const VOICES: usize = 8;
 
 #[allow(non_snake_case)]
 pub struct PatchState {
-
     midi_in_0__midi_events: Vec<MidiEvent>,
     poly__out: Vec<Vec<MidiEvent>>,
     midi_events_to_frequency_parameter_0__out: Vec<Option<f32>>,
@@ -28,12 +27,10 @@ impl PatchState {
     pub fn new(max_buffer_size: usize) -> Self {
         Self {
             midi_in_0__midi_events: Vec::new(),
-            poly__out: (0..VOICES)
-                .map(|_| Vec::new())
-                .collect(),
-            midi_events_to_frequency_parameter_0__out:vec![None; VOICES],
+            poly__out: (0..VOICES).map(|_| Vec::new()).collect(),
+            midi_events_to_frequency_parameter_0__out: vec![None; VOICES],
             sine_osc_0__out: PolyBuffer::new(VOICES, max_buffer_size),
-            midi_events_to_gate_parameter_0__out:vec![0.0; VOICES],
+            midi_events_to_gate_parameter_0__out: vec![0.0; VOICES],
             gate_envelope_0__envelope: PolyBuffer::new(VOICES, max_buffer_size),
             multiply_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             merge__out: vec![0.0; max_buffer_size],
@@ -57,11 +54,12 @@ pub struct Patch {
 }
 
 impl Patch {
-    pub fn new(
-        sample_rate: u32,
-        max_buffer_size: usize,
-        midi_queue: MidiQueue,
-    ) -> Self {
+    pub fn new(sample_rate: u32, max_buffer_size: usize, midi_queue: MidiQueue) -> Self {
+        let env = ModuleEnv {
+            sample_rate,
+            max_buffer_size,
+        };
+
         Self {
             max_buffer_size,
 
@@ -73,17 +71,13 @@ impl Patch {
                 .map(|_| MidiEventToFrequencyParameter::new(sample_rate, max_buffer_size))
                 .collect(),
 
-            sine_osc_0: (0..VOICES)
-                .map(|_| SineOsc::new(sample_rate, max_buffer_size))
-                .collect(),
+            sine_osc_0: (0..VOICES).map(|_| SineOsc::new(&env)).collect(),
 
             midi_events_to_gate_parameter_0: (0..VOICES)
                 .map(|_| MidiEventToGateParameter::new(sample_rate, max_buffer_size))
                 .collect(),
 
-            gate_envelope_0: (0..VOICES)
-                .map(|_| GateEnvelope::new(sample_rate, max_buffer_size))
-                .collect(),
+            gate_envelope_0: (0..VOICES).map(|_| GateEnvelope::new(&env)).collect(),
 
             multiply_0: (0..VOICES)
                 .map(|_| Multiply::new(sample_rate, max_buffer_size))
@@ -96,12 +90,10 @@ impl Patch {
     }
 
     pub fn process(&mut self, host_audio_out: &mut [f32]) {
-
         let frames = (host_audio_out.len() / 2).min(self.max_buffer_size);
 
-        self.midi_in_0.process(
-            &mut self.state.midi_in_0__midi_events,
-        );
+        self.midi_in_0
+            .process(&mut self.state.midi_in_0__midi_events);
 
         self.voice_allocator_0.process(
             &self.state.midi_in_0__midi_events,
@@ -109,15 +101,20 @@ impl Patch {
         );
 
         for voice in 0..VOICES {
-
             self.midi_events_to_frequency_parameter_0[voice].process(
                 &self.state.poly__out[voice],
                 &mut self.state.midi_events_to_frequency_parameter_0__out[voice],
             );
 
             self.sine_osc_0[voice].process(
-                self.state.midi_events_to_frequency_parameter_0__out[voice],
-                &mut self.state.sine_osc_0__out.voice_mut(voice)[..frames],
+                &sine_osc::Inputs {
+                    frequency: self.state.midi_events_to_frequency_parameter_0__out[voice],
+                    _phantom: std::marker::PhantomData,
+                },
+                &mut sine_osc::Outputs {
+                    out: &mut self.state.sine_osc_0__out.voice_mut(voice)[..frames],
+                    _phantom: std::marker::PhantomData,
+                },
             );
 
             self.midi_events_to_gate_parameter_0[voice].process(
@@ -126,8 +123,14 @@ impl Patch {
             );
 
             self.gate_envelope_0[voice].process(
-                self.state.midi_events_to_gate_parameter_0__out[voice],
-                &mut self.state.gate_envelope_0__envelope.voice_mut(voice)[..frames],
+                &gate_envelope::Inputs {
+                    gate: self.state.midi_events_to_gate_parameter_0__out[voice],
+                    _phantom: std::marker::PhantomData,
+                },
+                &mut gate_envelope::Outputs {
+                    envelope: &mut self.state.gate_envelope_0__envelope.voice_mut(voice)[..frames],
+                    _phantom: std::marker::PhantomData,
+                },
             );
 
             self.multiply_0[voice].process(
@@ -150,7 +153,7 @@ impl Patch {
         self.audio_out_0.process(
             &self.state.merge__out[..frames],
             &self.state.merge__out[..frames],
-            &mut host_audio_out[..frames * 2]
+            &mut host_audio_out[..frames * 2],
         );
     }
 }

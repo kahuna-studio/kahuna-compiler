@@ -653,10 +653,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kahuna_module"
+version = "0.1.0"
+
+[[package]]
 name = "kahuna_synth"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "kahuna_module",
  "midir",
 ]
 

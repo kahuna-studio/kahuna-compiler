@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "compiler",
-    "golden_output"
-]
+    "kahuna_module",
+    "golden_output"]
 resolver = "3"
