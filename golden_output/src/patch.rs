@@ -7,7 +7,7 @@ use crate::modules::sine_osc::{self, SineOsc};
 use crate::std_lib::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use crate::std_lib::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
 use crate::std_lib::operators::Multiply;
-use kahuna_module::{ModuleEnv, KahunaModule};
+use kahuna_module::{KahunaModule, ModuleEnv};
 
 const VOICES: usize = 8;
 
@@ -107,14 +107,10 @@ impl Patch {
             );
 
             self.sine_osc_0[voice].process(
-                &sine_osc::Inputs {
-                    frequency: self.state.midi_events_to_frequency_parameter_0__out[voice],
-                    _phantom: std::marker::PhantomData,
-                },
-                &mut sine_osc::Outputs {
-                    out: &mut self.state.sine_osc_0__out.voice_mut(voice)[..frames],
-                    _phantom: std::marker::PhantomData,
-                },
+                &sine_osc::Inputs::new(
+                    self.state.midi_events_to_frequency_parameter_0__out[voice]),
+                &mut sine_osc::Outputs::new(
+                    &mut self.state.sine_osc_0__out.voice_mut(voice)[..frames]),
             );
 
             self.midi_events_to_gate_parameter_0[voice].process(
@@ -123,14 +119,10 @@ impl Patch {
             );
 
             self.gate_envelope_0[voice].process(
-                &gate_envelope::Inputs {
-                    gate: self.state.midi_events_to_gate_parameter_0__out[voice],
-                    _phantom: std::marker::PhantomData,
-                },
-                &mut gate_envelope::Outputs {
-                    envelope: &mut self.state.gate_envelope_0__envelope.voice_mut(voice)[..frames],
-                    _phantom: std::marker::PhantomData,
-                },
+                &gate_envelope::Inputs::new(
+                    self.state.midi_events_to_gate_parameter_0__out[voice]),
+                &mut gate_envelope::Outputs::new(
+                    &mut self.state.gate_envelope_0__envelope.voice_mut(voice)[..frames]),
             );
 
             self.multiply_0[voice].process(

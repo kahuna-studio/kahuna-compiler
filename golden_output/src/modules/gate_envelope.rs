@@ -34,15 +34,17 @@ mod tests {
         assert_eq!(GateEnvelope::PORTS.len(), 2);
 
         let gate_port = &GateEnvelope::PORTS[0];
-        assert_eq!(gate_port.name, "gate");
         assert_eq!(gate_port.direction, PortDir::Input);
+        assert_eq!(gate_port.name, "gate");
+        assert_eq!(gate_port.required, Some(true));
         assert_eq!(gate_port.stream_type, PortKind::Parameter);
         assert_eq!(gate_port.rate, Some(Rate::ControlRate));
         assert_eq!(gate_port.range, Some(Range::Float(0.0, 1.0)));
 
         let env_port = &GateEnvelope::PORTS[1];
-        assert_eq!(env_port.name, "envelope");
         assert_eq!(env_port.direction, PortDir::Output);
+        assert_eq!(env_port.name, "envelope");
+        assert_eq!(env_port.required, None);
         assert_eq!(env_port.stream_type, PortKind::Signal);
         assert_eq!(env_port.rate, Some(Rate::AudioRate));
     }
@@ -53,8 +55,8 @@ mod tests {
         let mut gate = GateEnvelope::new(&env);
 
         let mut buffer = [0.0f32; 16];
-        let inputs = Inputs { gate: 1.0, _phantom: std::marker::PhantomData };
-        let mut outputs = Outputs { envelope: &mut buffer, _phantom: std::marker::PhantomData };
+        let inputs = Inputs::new(1.0);
+        let mut outputs = Outputs::new(&mut buffer);
 
         gate.process(&inputs, &mut outputs);
         assert!(buffer.iter().all(|&s| s == 1.0));

@@ -17,7 +17,7 @@ impl From<&PortSpec> for PortManifest {
     Self {
       direction: match p.direction { PortDir::Input => "input", PortDir::Output => "output" },
       name: p.name,
-      required: match p.direction { PortDir::Input => Some(p.required), PortDir::Output => None },
+      required: p.required,
       stream_type: match p.stream_type { PortKind::Signal => "signal", PortKind::Parameter => "parameter", PortKind::Event => "event" },
       rate: p.rate.map(|r| match r { Rate::AudioRate => "audio", Rate::ControlRate => "control" }),
       range: p.range.map(|r| match r { Range::Float(lo, hi) => (lo as f64, hi as f64), Range::Int(lo, hi) => (lo as f64, hi as f64) }),

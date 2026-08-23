@@ -92,7 +92,7 @@ pub struct PortSpec {
     pub rate: Option<Rate>,
     pub range: Option<Range>,
     /// Derived from the field's type: `Option<T>` => false, plain `T` => true.
-    pub required: bool,
+    pub required: Option<bool>,
     pub value_type: PortType,
 }
 
@@ -120,7 +120,6 @@ pub trait KahunaModule: Sized {
 // cannot pattern-match inside an already-sealed `ty` fragment — see
 // __munch_inputs! below. `outputs { ... }` doesn't have this problem since it
 // has no Option-detection requirement, so it keeps the simpler direct form.
-
 #[macro_export]
 macro_rules! kahuna_module {
     (
@@ -144,6 +143,8 @@ macro_rules! kahuna_module {
             @outputs [$( $out_sig $out_name : $out_type $( [ $( $out_key = $out_val ),* ] )? ),*]
             @fields []
             @specs []
+            @ctor_params []
+            @ctor_inits []
             @rest [$($in_tokens)*]
         }
     };
@@ -160,6 +161,8 @@ macro_rules! __munch_inputs {
         @outputs [$( $out_sig:tt $out_name:ident : $out_type:ty $( [ $( $out_key:ident = $out_val:expr ),* $(,)? ] )? ),* $(,)?]
         @fields [$($in_field:tt)*]
         @specs [$($in_spec:tt)*]
+        @ctor_params [$($ctor_param:tt)*]
+        @ctor_inits [$($ctor_init:tt)*]
         @rest []
     ) => {
         $(#[$meta])*
@@ -172,11 +175,23 @@ macro_rules! __munch_inputs {
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
 
+        impl<'a> Inputs<'a> {
+            pub fn new($($ctor_param)*) -> Self {
+                Self { $($ctor_init)* _phantom: ::std::marker::PhantomData }
+            }
+        }
+
         pub struct Outputs<'a> {
             $(
                 pub $out_name : $crate::__out_port_type!($out_sig, $out_type, 'a),
             )*
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'a> Outputs<'a> {
+            pub fn new($( $out_name : $crate::__out_port_type!($out_sig, $out_type, 'a) ),*) -> Self {
+                Self { $( $out_name, )* _phantom: ::std::marker::PhantomData }
+            }
         }
 
         impl $crate::KahunaModule for $name {
@@ -199,10 +214,10 @@ macro_rules! __munch_inputs {
     };
 
     // ---- Parameter, optional: `@name: Option<T> [ ... ],` ----
-    // MUST come before the plain-type arm below.
     (
         @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
         @fields [$($fld:tt)*] @specs [$($spec:tt)*]
+        @ctor_params [$($cp:tt)*] @ctor_inits [$($ci:tt)*]
         @rest [
             @ $pname:ident : Option<$pt:ty>
             $( [ $( $key:ident = $val:expr ),* $(,)? ] )?
@@ -211,22 +226,19 @@ macro_rules! __munch_inputs {
     ) => {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
-            @fields [
-                $($fld)*
-                pub $pname : Option<$pt>,
-            ]
-            @specs [
-                $($spec)*
-                $crate::__make_in_port_spec!(@opt, stringify!($pname), $pt $(, $( $key = $val ),* )?),
-            ]
+            @fields [ $($fld)* pub $pname : Option<$pt>, ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@opt, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @ctor_params [ $($cp)* $pname : Option<$pt>, ]
+            @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
         }
     };
 
-    // ---- Parameter, required: `@name: T [ ... ],` (T is not Option<..>) ----
+    // ---- Parameter, required: `@name: T [ ... ],` ----
     (
         @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
         @fields [$($fld:tt)*] @specs [$($spec:tt)*]
+        @ctor_params [$($cp:tt)*] @ctor_inits [$($ci:tt)*]
         @rest [
             @ $pname:ident : $pt:ty
             $( [ $( $key:ident = $val:expr ),* $(,)? ] )?
@@ -235,14 +247,10 @@ macro_rules! __munch_inputs {
     ) => {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
-            @fields [
-                $($fld)*
-                pub $pname : $pt,
-            ]
-            @specs [
-                $($spec)*
-                $crate::__make_in_port_spec!(@req, stringify!($pname), $pt $(, $( $key = $val ),* )?),
-            ]
+            @fields [ $($fld)* pub $pname : $pt, ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@req, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @ctor_params [ $($cp)* $pname : $pt, ]
+            @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
         }
     };
@@ -251,6 +259,7 @@ macro_rules! __munch_inputs {
     (
         @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
         @fields [$($fld:tt)*] @specs [$($spec:tt)*]
+        @ctor_params [$($cp:tt)*] @ctor_inits [$($ci:tt)*]
         @rest [
             ~ $pname:ident : $pt:ty
             $( [ $( $key:ident = $val:expr ),* $(,)? ] )?
@@ -259,14 +268,10 @@ macro_rules! __munch_inputs {
     ) => {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
-            @fields [
-                $($fld)*
-                pub $pname : &'a [$pt],
-            ]
-            @specs [
-                $($spec)*
-                $crate::__make_in_port_spec!(@sig, stringify!($pname), $pt $(, $( $key = $val ),* )?),
-            ]
+            @fields [ $($fld)* pub $pname : &'a [$pt], ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@sig, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @ctor_params [ $($cp)* $pname : &'a [$pt], ]
+            @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
         }
     };
@@ -275,20 +280,17 @@ macro_rules! __munch_inputs {
     (
         @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
         @fields [$($fld:tt)*] @specs [$($spec:tt)*]
+        @ctor_params [$($cp:tt)*] @ctor_inits [$($ci:tt)*]
         @rest [
             event $pname:ident : $pt:ty , $($rest:tt)*
         ]
     ) => {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
-            @fields [
-                $($fld)*
-                pub $pname : &'a [$pt],
-            ]
-            @specs [
-                $($spec)*
-                $crate::__make_in_port_spec!(@evt, stringify!($pname), $pt),
-            ]
+            @fields [ $($fld)* pub $pname : &'a [$pt], ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@evt, stringify!($pname), $pt), ]
+            @ctor_params [ $($cp)* $pname : &'a [$pt], ]
+            @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
         }
     };
@@ -325,7 +327,7 @@ macro_rules! __make_in_port_spec {
             stream_type: $crate::PortKind::Parameter,
             rate: $crate::__opt_rate!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: false,
+            required: Some(false),
             value_type: $crate::__make_port_type!($ty $(, $variants )?),
         }
     };
@@ -337,7 +339,7 @@ macro_rules! __make_in_port_spec {
             stream_type: $crate::PortKind::Parameter,
             rate: $crate::__opt_rate!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: true,
+            required: Some(true),
             value_type: $crate::__make_port_type!($ty $(, $variants )?),
         }
     };
@@ -349,7 +351,7 @@ macro_rules! __make_in_port_spec {
             stream_type: $crate::PortKind::Signal,
             rate: $crate::__opt_rate_audio!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: true,
+            required: None, // Not sure if that makes sense
             value_type: $crate::PortType::of::<$ty>(),
         }
     };
@@ -361,7 +363,7 @@ macro_rules! __make_in_port_spec {
             stream_type: $crate::PortKind::Event,
             rate: None,
             range: None,
-            required: true,
+            required: Some(false), // Unplugged is the same as plugged, but no event passed
             value_type: $crate::PortType::of::<$ty>(),
         }
     };
@@ -378,7 +380,7 @@ macro_rules! __make_out_port_spec {
             stream_type: $crate::PortKind::Parameter,
             rate: $crate::__opt_rate!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: false,
+            required: None,
             value_type: $crate::__make_port_type!($ty $(, $variants )?),
         }
     };
@@ -390,7 +392,7 @@ macro_rules! __make_out_port_spec {
             stream_type: $crate::PortKind::Signal,
             rate: $crate::__opt_rate_audio!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: false,
+            required: None,
             value_type: $crate::PortType::of::<$ty>(),
         }
     };
@@ -402,7 +404,7 @@ macro_rules! __make_out_port_spec {
             stream_type: $crate::PortKind::Event,
             rate: None,
             range: None,
-            required: false,
+            required: None,
             value_type: $crate::PortType::of::<$ty>(),
         }
     };
