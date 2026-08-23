@@ -7,3 +7,4 @@ edition = "2021"
 cpal = "0.18.1"
 midir = "0.11.0"
 kahuna_module = { path = "../kahuna_module" }
+serde_json = "1.0.151"

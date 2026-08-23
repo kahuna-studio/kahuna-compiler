@@ -13,7 +13,11 @@ kahuna_module! {
 }
 
 impl GateEnvelope {
-    pub fn init(&mut self, _env: &ModuleEnv) {}
+
+    pub fn init(_env: &ModuleEnv) -> Self {
+        Self {
+        }
+    }
 
     pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
         outputs.envelope.fill(inputs.gate);

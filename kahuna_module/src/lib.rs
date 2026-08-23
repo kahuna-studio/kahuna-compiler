@@ -1,3 +1,5 @@
+pub mod port_manifest;
+
 use std::any::TypeId;
 
 // ============================================================================
@@ -125,7 +127,7 @@ macro_rules! kahuna_module {
     (
         $(#[$meta:meta])*
         struct $name:ident {
-            $( pub $state_field:ident : $state_type:ty ),* $(,)?
+            $( $state_field:ident : $state_type:ty ),* $(,)?
         }
 
         inputs {
@@ -138,10 +140,9 @@ macro_rules! kahuna_module {
     ) => {
         $(#[$meta])*
         pub struct $name {
-            $( pub $state_field : $state_type, )*
+            $( $state_field : $state_type, )*
         }
 
-        #[allow(non_snake_case)]
         pub struct Inputs<'a> {
             $(
                 pub $in_name : $crate::__in_port_type!($in_sig, $in_type, 'a),
@@ -149,7 +150,6 @@ macro_rules! kahuna_module {
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
 
-        #[allow(non_snake_case)]
         pub struct Outputs<'a> {
             $(
                 pub $out_name : $crate::__out_port_type!($out_sig, $out_type, 'a),
@@ -178,11 +178,7 @@ macro_rules! kahuna_module {
             ];
 
             fn new(env: &$crate::ModuleEnv) -> Self {
-                let mut instance = Self {
-                    $( $state_field: ::core::default::Default::default(), )*
-                };
-                instance.init(env);
-                instance
+                Self::init(env)
             }
         }
     };

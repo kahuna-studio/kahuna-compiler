@@ -1,10 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BufferSize, FrameCount, StreamConfig};
-
+use kahuna_module::KahunaModule;
+use kahuna_module::port_manifest::PortManifest;
 use crate::host::lib::start_midi;
 use crate::patch::Patch;
 use crate::host::midi::MidiEvent;
+use crate::modules::gate_envelope::GateEnvelope;
+use crate::modules::sine_osc::SineOsc;
 
 pub fn main() {
     let max_buffer_size: usize = 2048;
@@ -49,8 +52,19 @@ pub fn main() {
 
     stream.play().expect("Failed to start stream");
 
+    write_manifest();
+    
     eprintln!("[Kahuna] Running. Press Enter to quit.");
 
     let mut buf = String::new();
     std::io::stdin().read_line(&mut buf).ok();
+}
+fn write_manifest() {
+    let modules: Vec<(&str, Vec<PortManifest>)> = vec![
+        ("SineOsc", SineOsc::PORTS.iter().map(Into::into).collect()),
+        ("GateEnvelope", GateEnvelope::PORTS.iter().map(Into::into).collect()),
+    ];
+    let json = serde_json::to_string_pretty(&modules).unwrap();
+    std::fs::write("modules.manifest.json", json).expect("failed to write manifest");
+    eprintln!("[Kahuna] Wrote modules.manifest.json");
 }

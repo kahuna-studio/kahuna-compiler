@@ -4,8 +4,8 @@ use std::f32::consts::PI;
 
 kahuna_module! {
     struct SineOsc {
-        pub phase: AudioRatePhase,
-        pub frequency: f32,
+        phase: AudioRatePhase,
+        frequency: f32,
     }
 
     inputs {
@@ -18,9 +18,12 @@ kahuna_module! {
 }
 
 impl SineOsc {
-    pub fn init(&mut self, env: &ModuleEnv) {
-        self.phase = AudioRatePhase::new(env.sample_rate);
-        self.frequency = 440.0;
+
+    pub fn init(module_env: &ModuleEnv) -> Self {
+        Self {
+            phase: AudioRatePhase::new(module_env.sample_rate),
+            frequency: 440.0,
+        }
     }
 
     pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
