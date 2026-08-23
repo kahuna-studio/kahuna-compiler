@@ -62,18 +62,18 @@ impl PortType {
 
     pub fn short_name(&self) -> &'static str {
         (self.canonical_path)()
-          .rsplit("::")
-          .next()
-          .unwrap_or((self.canonical_path)())
+            .rsplit("::")
+            .next()
+            .unwrap_or((self.canonical_path)())
     }
 }
 
 impl std::fmt::Debug for PortType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PortType")
-          .field("canonical_path", &self.canonical_path)
-          .field("enum_variants", &self.enum_variants)
-          .finish()
+            .field("canonical_path", &self.canonical_path)
+            .field("enum_variants", &self.enum_variants)
+            .finish()
     }
 }
 
@@ -227,7 +227,7 @@ macro_rules! __munch_inputs {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
             @fields [ $($fld)* pub $pname : Option<$pt>, ]
-            @specs [ $($spec)* $crate::__make_in_port_spec!(@opt, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@parameter_optional, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
             @ctor_params [ $($cp)* $pname : Option<$pt>, ]
             @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
@@ -248,14 +248,35 @@ macro_rules! __munch_inputs {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
             @fields [ $($fld)* pub $pname : $pt, ]
-            @specs [ $($spec)* $crate::__make_in_port_spec!(@req, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@parameter_required, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
             @ctor_params [ $($cp)* $pname : $pt, ]
             @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
         }
     };
 
-    // ---- Signal input: `~name: T [ ... ],` ----
+    // Signal, optional: `~name: Option<T> [ ... ],`
+    (
+        @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
+        @fields [$($fld:tt)*] @specs [$($spec:tt)*]
+        @ctor_params [$($cp:tt)*] @ctor_inits [$($ci:tt)*]
+        @rest [
+            ~ $pname:ident : Option<$pt:ty>
+            $( [ $( $key:ident = $val:expr ),* $(,)? ] )?
+            , $($rest:tt)*
+        ]
+    ) => {
+        $crate::__munch_inputs! {
+            @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
+            @fields [ $($fld)* pub $pname : Option<&'a [$pt]>, ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@signal_optional, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @ctor_params [ $($cp)* $pname : Option<&'a [$pt]>, ]
+            @ctor_inits [ $($ci)* $pname, ]
+            @rest [$($rest)*]
+        }
+    };
+
+    // ---- Signal, required: `~name: T [ ... ],` ----
     (
         @meta [$($meta:tt)*] @name [$name:ident] @state [$($sf:tt)*] @outputs [$($out:tt)*]
         @fields [$($fld:tt)*] @specs [$($spec:tt)*]
@@ -269,7 +290,7 @@ macro_rules! __munch_inputs {
         $crate::__munch_inputs! {
             @meta [$($meta)*] @name [$name] @state [$($sf)*] @outputs [$($out)*]
             @fields [ $($fld)* pub $pname : &'a [$pt], ]
-            @specs [ $($spec)* $crate::__make_in_port_spec!(@sig, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
+            @specs [ $($spec)* $crate::__make_in_port_spec!(@signal_required, stringify!($pname), $pt $(, $( $key = $val ),* )?), ]
             @ctor_params [ $($cp)* $pname : &'a [$pt], ]
             @ctor_inits [ $($ci)* $pname, ]
             @rest [$($rest)*]
@@ -312,7 +333,7 @@ macro_rules! __out_port_type {
 // PortSpec builders
 // ============================================================================
 //
-// `__make_in_port_spec!` now takes an explicit tag (@opt / @req / @sig / @evt)
+// `__make_in_port_spec!` now takes an explicit tag (@parameter_optional / @parameter_required / @signal_required / @evt)
 // decided by __munch_inputs! above, instead of re-deriving Option-ness from
 // an already-sealed `ty` fragment (which is what was broken).
 
@@ -320,7 +341,7 @@ macro_rules! __out_port_type {
 #[macro_export]
 macro_rules! __make_in_port_spec {
     // Parameter, optional
-    (@opt, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )? $(, enum_variants = $variants:expr )?) => {
+    (@parameter_optional, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )? $(, enum_variants = $variants:expr )?) => {
         $crate::PortSpec {
             name: $name,
             direction: $crate::PortDir::Input,
@@ -332,7 +353,7 @@ macro_rules! __make_in_port_spec {
         }
     };
     // Parameter, required
-    (@req, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )? $(, enum_variants = $variants:expr )?) => {
+    (@parameter_required, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )? $(, enum_variants = $variants:expr )?) => {
         $crate::PortSpec {
             name: $name,
             direction: $crate::PortDir::Input,
@@ -343,15 +364,27 @@ macro_rules! __make_in_port_spec {
             value_type: $crate::__make_port_type!($ty $(, $variants )?),
         }
     };
-    // Signal
-    (@sig, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )?) => {
+    // Signal, optional
+    (@signal_optional, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )?) => {
         $crate::PortSpec {
             name: $name,
             direction: $crate::PortDir::Input,
             stream_type: $crate::PortKind::Signal,
             rate: $crate::__opt_rate_audio!($( $rate )?),
             range: $crate::__opt_range!($( $range )?),
-            required: None, // Not sure if that makes sense
+            required: Some(false),
+            value_type: $crate::PortType::of::<$ty>(),
+        }
+    };
+    // Signal, required
+    (@signal_required, $name:expr, $ty:ty $(, rate = $rate:expr )? $(, range = $range:expr )?) => {
+        $crate::PortSpec {
+            name: $name,
+            direction: $crate::PortDir::Input,
+            stream_type: $crate::PortKind::Signal,
+            rate: $crate::__opt_rate_audio!($( $rate )?),
+            range: $crate::__opt_range!($( $range )?),
+            required: Some(true),
             value_type: $crate::PortType::of::<$ty>(),
         }
     };
@@ -424,20 +457,32 @@ macro_rules! __make_port_type {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __opt_rate {
-    () => { Some($crate::Rate::ControlRate) };
-    ($rate:expr) => { Some($rate) };
+    () => {
+        Some($crate::Rate::ControlRate)
+    };
+    ($rate:expr) => {
+        Some($rate)
+    };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __opt_rate_audio {
-    () => { Some($crate::Rate::AudioRate) };
-    ($rate:expr) => { Some($rate) };
+    () => {
+        Some($crate::Rate::AudioRate)
+    };
+    ($rate:expr) => {
+        Some($rate)
+    };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __opt_range {
-    () => { None };
-    ($range:expr) => { Some($range) };
+    () => {
+        None
+    };
+    ($range:expr) => {
+        Some($range)
+    };
 }
