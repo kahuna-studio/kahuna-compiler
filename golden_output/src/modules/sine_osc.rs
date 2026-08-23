@@ -52,19 +52,19 @@ mod tests {
 
         let freq_port = &SineOsc::PORTS[0];
         assert_eq!(freq_port.name, "frequency");
-        assert_eq!(freq_port.dir, PortDir::Input);
-        assert_eq!(freq_port.kind, PortKind::Parameter);
+        assert_eq!(freq_port.direction, PortDir::Input);
+        assert_eq!(freq_port.stream_type, PortKind::Parameter);
         assert_eq!(freq_port.rate, Some(Rate::ControlRate));
         assert_eq!(freq_port.range, Some(Range::Float(20.0, 20000.0)));
-        assert!(freq_port.port_type.matches(&PortType::of::<Option<f32>>()));
+        assert!(freq_port.value_type.matches(&PortType::of::<Option<f32>>()));
 
         let out_port = &SineOsc::PORTS[1];
         assert_eq!(out_port.name, "out");
-        assert_eq!(out_port.dir, PortDir::Output);
-        assert_eq!(out_port.kind, PortKind::Signal);
+        assert_eq!(out_port.direction, PortDir::Output);
+        assert_eq!(out_port.stream_type, PortKind::Signal);
         assert_eq!(out_port.rate, Some(Rate::AudioRate));
         assert_eq!(out_port.range, Some(Range::Float(-1.0, 1.0)));
-        assert!(out_port.port_type.matches(&PortType::of::<f32>()));
+        assert!(out_port.value_type.matches(&PortType::of::<f32>()));
     }
 
     #[test]

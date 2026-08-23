@@ -35,15 +35,15 @@ mod tests {
 
         let gate_port = &GateEnvelope::PORTS[0];
         assert_eq!(gate_port.name, "gate");
-        assert_eq!(gate_port.dir, PortDir::Input);
-        assert_eq!(gate_port.kind, PortKind::Parameter);
+        assert_eq!(gate_port.direction, PortDir::Input);
+        assert_eq!(gate_port.stream_type, PortKind::Parameter);
         assert_eq!(gate_port.rate, Some(Rate::ControlRate));
         assert_eq!(gate_port.range, Some(Range::Float(0.0, 1.0)));
 
         let env_port = &GateEnvelope::PORTS[1];
         assert_eq!(env_port.name, "envelope");
-        assert_eq!(env_port.dir, PortDir::Output);
-        assert_eq!(env_port.kind, PortKind::Signal);
+        assert_eq!(env_port.direction, PortDir::Output);
+        assert_eq!(env_port.stream_type, PortKind::Signal);
         assert_eq!(env_port.rate, Some(Rate::AudioRate));
     }
 
