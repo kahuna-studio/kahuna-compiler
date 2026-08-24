@@ -1,6 +1,7 @@
 pub mod port_manifest;
 pub mod midi;
 pub mod patch;
+pub mod io_nodes;
 
 use std::any::TypeId;
 

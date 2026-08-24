@@ -1,5 +1,4 @@
 pub mod midi;
-pub mod io_nodes;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use kahuna_core::midi::MidiEvent;

@@ -1,11 +1,11 @@
 use crate::modules::gate_envelope::{self, GateEnvelope};
 use crate::modules::sine_osc::{self, SineOsc};
+use kahuna_core::io_nodes::{AudioOut, MidiIn};
 use kahuna_core::midi::polyphony::poly_buffer::PolyBuffer;
 use kahuna_core::midi::polyphony::voice_allocator::VoiceAllocator;
 use kahuna_core::midi::{MidiEvent, MidiQueue};
 use kahuna_core::patch::KahunaPatch;
 use kahuna_core::{KahunaModule, ModuleEnv};
-use kahuna_runtime::io_nodes::{AudioOut, MidiIn};
 use kahuna_std::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
 use kahuna_std::operators::Multiply;

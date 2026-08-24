@@ -1,4 +1,4 @@
-use kahuna_core::midi::{MidiEvent, MidiQueue};
+use crate::midi::{MidiEvent, MidiQueue};
 
 pub struct MidiIn {
     midi_queue: MidiQueue,
