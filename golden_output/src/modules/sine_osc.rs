@@ -1,5 +1,5 @@
-use crate::std_lib::phase_generators::AudioRatePhase;
-use kahuna_module::{kahuna_module, ModuleEnv, Range, Rate};
+use kahuna_core::{kahuna_module, ModuleEnv, Range, Rate};
+use kahuna_std::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
 
 kahuna_module! {
@@ -18,7 +18,6 @@ kahuna_module! {
 }
 
 impl SineOsc {
-
     pub fn init(module_env: &ModuleEnv) -> Self {
         Self {
             phase: AudioRatePhase::new(module_env.sample_rate),
@@ -30,7 +29,6 @@ impl SineOsc {
         if let Some(freq) = inputs.frequency {
             self.frequency = freq;
         } else {
-
         }
 
         self.phase.process(self.frequency, outputs.out);
@@ -43,8 +41,8 @@ impl SineOsc {
 
 #[cfg(test)]
 mod tests {
-    use kahuna_module::{PortDir, PortKind, PortType, KahunaModule};
     use super::*;
+    use kahuna_core::{KahunaModule, PortDir, PortKind, PortType};
 
     #[test]
     fn test_ports_reflection() {
@@ -71,7 +69,10 @@ mod tests {
 
     #[test]
     fn test_dsp_process() {
-        let env = ModuleEnv { sample_rate: 48000, max_buffer_size: 256 };
+        let env = ModuleEnv {
+            sample_rate: 48000,
+            max_buffer_size: 256,
+        };
         let mut osc = SineOsc::new(&env);
 
         let mut buffer = [0.0f32; 64];

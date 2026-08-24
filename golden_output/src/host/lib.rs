@@ -1,17 +1,5 @@
-// ============================================================
-// host/lib.rs — runtime types shared across patch and modules
-// ============================================================
-
-use crate::host::midi::MidiEvent;
-
-// ============================================================
-// MIDI I/O — standalone target implementation
-//
-// In a plugin target this is replaced by the host buffer handoff.
-// ============================================================
-
+use kahuna_core::midi::{MidiEvent, MidiQueue};
 use midir::{MidiInput, MidiInputConnection};
-use crate::host::midi::MidiQueue;
 
 pub fn start_midi(midi_queue: MidiQueue) -> Option<MidiInputConnection<()>> {
     let midi_in = MidiInput::new("kahuna_synth").ok()?;

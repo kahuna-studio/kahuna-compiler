@@ -1,4 +1,4 @@
-use crate::host::midi::MidiEvent;
+use kahuna_core::midi::MidiEvent;
 
 pub struct MidiEventToGateParameter {
     active_notes: Vec<u8>,

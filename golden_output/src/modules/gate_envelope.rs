@@ -1,4 +1,4 @@
-use kahuna_module::{kahuna_module, ModuleEnv, Range, Rate};
+use kahuna_core::{kahuna_module, ModuleEnv, Range, Rate};
 
 kahuna_module! {
     struct GateEnvelope {}
@@ -26,8 +26,8 @@ impl GateEnvelope {
 
 #[cfg(test)]
 mod tests {
-    use kahuna_module::{PortDir, PortKind, KahunaModule};
     use super::*;
+    use kahuna_core::{KahunaModule, PortDir, PortKind};
 
     #[test]
     fn test_gate_envelope_ports() {

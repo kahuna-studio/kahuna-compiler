@@ -653,18 +653,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "kahuna_module"
+name = "kahuna-core"
 version = "0.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "kahuna_synth"
+name = "kahuna-std"
+version = "0.1.0"
+dependencies = [
+ "kahuna-core",
+]
+
+[[package]]
+name = "kahuna-synth"
 version = "0.1.0"
 dependencies = [
  "cpal",
- "kahuna_module",
+ "kahuna-core",
+ "kahuna-std",
  "midir",
  "serde_json",
 ]

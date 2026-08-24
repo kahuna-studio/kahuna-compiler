@@ -1,14 +1,14 @@
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BufferSize, FrameCount, StreamConfig};
-use kahuna_module::KahunaModule;
-use kahuna_module::port_manifest::PortManifest;
 use crate::host::lib::start_midi;
-use crate::patch::Patch;
-use crate::host::midi::MidiEvent;
 use crate::modules::gate_envelope::GateEnvelope;
 use crate::modules::sine_osc::SineOsc;
+use crate::patch::Patch;
+use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BufferSize, FrameCount, StreamConfig};
+use kahuna_core::midi::MidiEvent;
+use kahuna_core::port_manifest::PortManifest;
+use kahuna_core::KahunaModule;
 
 pub fn main() {
     let max_buffer_size: usize = 2048;

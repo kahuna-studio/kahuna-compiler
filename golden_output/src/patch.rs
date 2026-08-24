@@ -1,13 +1,13 @@
 use crate::host::io_nodes::{AudioOut, MidiIn};
 use crate::host::lib::PolyBuffer;
-use crate::host::midi::{MidiEvent, MidiQueue};
 use crate::host::polyphony::voice_allocator::VoiceAllocator;
 use crate::modules::gate_envelope::{self, GateEnvelope};
 use crate::modules::sine_osc::{self, SineOsc};
-use crate::std_lib::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
-use crate::std_lib::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
-use crate::std_lib::operators::Multiply;
-use kahuna_module::{KahunaModule, ModuleEnv};
+use kahuna_core::midi::{MidiEvent, MidiQueue};
+use kahuna_core::{KahunaModule, ModuleEnv};
+use kahuna_std::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
+use kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
+use kahuna_std::operators::Multiply;
 
 const VOICES: usize = 8;
 
