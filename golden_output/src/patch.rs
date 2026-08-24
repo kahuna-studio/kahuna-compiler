@@ -1,10 +1,11 @@
-use crate::host::io_nodes::{AudioOut, MidiIn};
-use crate::host::lib::PolyBuffer;
-use crate::host::polyphony::voice_allocator::VoiceAllocator;
 use crate::modules::gate_envelope::{self, GateEnvelope};
 use crate::modules::sine_osc::{self, SineOsc};
+use kahuna_core::midi::polyphony::poly_buffer::PolyBuffer;
+use kahuna_core::midi::polyphony::voice_allocator::VoiceAllocator;
 use kahuna_core::midi::{MidiEvent, MidiQueue};
+use kahuna_core::patch::KahunaPatch;
 use kahuna_core::{KahunaModule, ModuleEnv};
+use kahuna_runtime::io_nodes::{AudioOut, MidiIn};
 use kahuna_std::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
 use kahuna_std::operators::Multiply;
@@ -68,28 +69,31 @@ impl Patch {
             voice_allocator_0: VoiceAllocator::new(VOICES),
 
             midi_events_to_frequency_parameter_0: (0..VOICES)
-                .map(|_| MidiEventToFrequencyParameter::new(sample_rate, max_buffer_size))
-                .collect(),
+              .map(|_| MidiEventToFrequencyParameter::new(sample_rate, max_buffer_size))
+              .collect(),
 
             sine_osc_0: (0..VOICES).map(|_| SineOsc::new(&env)).collect(),
 
             midi_events_to_gate_parameter_0: (0..VOICES)
-                .map(|_| MidiEventToGateParameter::new(sample_rate, max_buffer_size))
-                .collect(),
+              .map(|_| MidiEventToGateParameter::new(sample_rate, max_buffer_size))
+              .collect(),
 
             gate_envelope_0: (0..VOICES).map(|_| GateEnvelope::new(&env)).collect(),
 
             multiply_0: (0..VOICES)
-                .map(|_| Multiply::new(sample_rate, max_buffer_size))
-                .collect(),
+              .map(|_| Multiply::new(sample_rate, max_buffer_size))
+              .collect(),
 
             audio_out_0: AudioOut::new(sample_rate, max_buffer_size),
 
             state: PatchState::new(max_buffer_size),
         }
     }
+}
 
-    pub fn process(&mut self, host_audio_out: &mut [f32]) {
+impl KahunaPatch for Patch {
+
+    fn process(&mut self, host_audio_out: &mut [f32]) {
         let frames = (host_audio_out.len() / 2).min(self.max_buffer_size);
 
         self.midi_in_0

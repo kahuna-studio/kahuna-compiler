@@ -1,11 +1,11 @@
-# kahuna_synth — compiler target
+# kahuna-synth — compiler target
 
 Hand-written Rust code representing the desired output of the Kahuna compiler.
 Once the compiler can produce equivalent code from Kahuna source, this directory is deleted.
 
 ## What it does
 
-Monophonic sine oscillator controlled by MIDI, with a gate envelope, running via cpal.
+Polyphonic sine oscillator controlled by MIDI, with a gate envelope, running via cpal.
 
 ```
 MIDI In ──┬──► SineOsc ──────────► Multiply ──► Audio Out

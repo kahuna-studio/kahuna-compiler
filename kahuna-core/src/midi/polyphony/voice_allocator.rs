@@ -1,4 +1,4 @@
-use kahuna_core::midi::MidiEvent;
+use crate::midi::MidiEvent;
 
 pub struct VoiceAllocator {
     assignments: Vec<Option<u8>>,

@@ -11,7 +11,7 @@ impl MidiIn {
         }
     }
 
-    pub fn process(&self, midi_events: &mut Vec<MidiEvent>) {
+     pub fn process(&self, midi_events: &mut Vec<MidiEvent>) {
 
         midi_events.clear();
         midi_events.extend(
@@ -26,11 +26,10 @@ pub struct AudioOut {
 
 impl AudioOut {
     pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
-        Self {
-        }
+        Self {}
     }
 
-    pub(crate) fn process(&self, left_in: &[f32], right_in: &[f32], host_audio_out: &mut [f32]) {
+    pub fn process(&self, left_in: &[f32], right_in: &[f32], host_audio_out: &mut [f32]) {
 
         let frames = host_audio_out.len() / 2;
 
