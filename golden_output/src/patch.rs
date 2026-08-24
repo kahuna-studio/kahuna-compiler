@@ -16,9 +16,9 @@ const VOICES: usize = 8;
 pub struct PatchState {
     midi_in_0__midi_events: Vec<MidiEvent>,
     poly__out: Vec<Vec<MidiEvent>>,
-    midi_events_to_frequency_parameter_0__out: Vec<Option<f32>>,
+    midi_events_to_frequency_parameter_0__out: Vec<f32>,
     sine_osc_0__out: PolyBuffer<f32>,
-    midi_events_to_gate_parameter_0__out: Vec<f32>,
+    midi_events_to_gate_parameter_0__out: Vec<bool>,
     gate_envelope_0__envelope: PolyBuffer<f32>,
     multiply_0__out: PolyBuffer<f32>,
     merge__out: Vec<f32>,
@@ -29,9 +29,9 @@ impl PatchState {
         Self {
             midi_in_0__midi_events: Vec::new(),
             poly__out: (0..VOICES).map(|_| Vec::new()).collect(),
-            midi_events_to_frequency_parameter_0__out: vec![None; VOICES],
+            midi_events_to_frequency_parameter_0__out: vec![0.0; VOICES],
             sine_osc_0__out: PolyBuffer::new(VOICES, max_buffer_size),
-            midi_events_to_gate_parameter_0__out: vec![0.0; VOICES],
+            midi_events_to_gate_parameter_0__out: vec![false; VOICES],
             gate_envelope_0__envelope: PolyBuffer::new(VOICES, max_buffer_size),
             multiply_0__out: PolyBuffer::new(VOICES, max_buffer_size),
             merge__out: vec![0.0; max_buffer_size],
@@ -69,22 +69,22 @@ impl Patch {
             voice_allocator_0: VoiceAllocator::new(VOICES),
 
             midi_events_to_frequency_parameter_0: (0..VOICES)
-              .map(|_| MidiEventToFrequencyParameter::new(sample_rate, max_buffer_size))
+              .map(|_| MidiEventToFrequencyParameter::new(&env))
               .collect(),
 
             sine_osc_0: (0..VOICES).map(|_| SineOsc::new(&env)).collect(),
 
             midi_events_to_gate_parameter_0: (0..VOICES)
-              .map(|_| MidiEventToGateParameter::new(sample_rate, max_buffer_size))
+              .map(|_| MidiEventToGateParameter::new(&env))
               .collect(),
 
             gate_envelope_0: (0..VOICES).map(|_| GateEnvelope::new(&env)).collect(),
 
             multiply_0: (0..VOICES)
-              .map(|_| Multiply::new(sample_rate, max_buffer_size))
+              .map(|_| Multiply::new(&env))
               .collect(),
 
-            audio_out_0: AudioOut::new(sample_rate, max_buffer_size),
+            audio_out_0: AudioOut::new(&env),
 
             state: PatchState::new(max_buffer_size),
         }

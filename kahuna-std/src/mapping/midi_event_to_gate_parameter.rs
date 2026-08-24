@@ -1,17 +1,18 @@
 use kahuna_core::midi::MidiEvent;
+use kahuna_core::ModuleEnv;
 
 pub struct MidiEventToGateParameter {
     active_notes: Vec<u8>,
 }
 
 impl MidiEventToGateParameter {
-    pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
+    pub fn new(_module_env: &ModuleEnv) -> Self {
         Self {
             active_notes: Vec::new(),
         }
     }
 
-    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut f32) {
+    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut bool) {
         for event in midi_in {
             match event {
                 MidiEvent::NoteOn { note, velocity } if *velocity > 0 => {
@@ -25,7 +26,7 @@ impl MidiEventToGateParameter {
             }
         }
 
-        *out = if self.active_notes.is_empty() { 0.0 } else { 1.0 };
+        *out = !self.active_notes.is_empty();
     }
 }
 
@@ -33,8 +34,8 @@ impl MidiEventToGateParameter {
 mod tests {
     use super::*;
 
-    fn make() -> (MidiEventToGateParameter, f32) {
-        (MidiEventToGateParameter::new(48000, 256), 0.0)
+    fn make() -> (MidiEventToGateParameter, bool) {
+        (MidiEventToGateParameter::new(&ModuleEnv { sample_rate: 48000, max_buffer_size: 256 }), false)
     }
 
     fn note_on(note: u8) -> MidiEvent {
@@ -50,33 +51,33 @@ mod tests {
     }
 
     #[test]
-    fn no_events_yields_zero() {
+    fn no_events_yields_false() {
         let (mut m, mut out) = make();
         m.process(&[], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
     }
 
     #[test]
-    fn note_on_yields_one() {
+    fn note_on_yields_true() {
         let (mut m, mut out) = make();
         m.process(&[note_on(60)], &mut out);
-        assert_eq!(out, 1.0);
+        assert_eq!(out, true);
     }
 
     #[test]
-    fn note_off_yields_zero_when_no_notes_remain() {
+    fn note_off_yields_false_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(60)], &mut out);
         m.process(&[note_off(60)], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
     }
 
     #[test]
-    fn note_on_velocity_0_yields_zero_when_no_notes_remain() {
+    fn note_on_velocity_0_yields_false_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(60)], &mut out);
         m.process(&[note_on_vel0(60)], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
     }
 
     #[test]
@@ -84,16 +85,16 @@ mod tests {
         let (mut m, mut out) = make();
         m.process(&[note_on(60), note_on(64)], &mut out);
         m.process(&[note_off(60)], &mut out);
-        assert_eq!(out, 1.0);
+        assert_eq!(out, true);
         m.process(&[note_off(64)], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
     }
 
     #[test]
     fn spurious_note_off_does_not_underflow() {
         let (mut m, mut out) = make();
         m.process(&[note_off(60), note_off(64)], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
         assert!(m.active_notes.is_empty());
     }
 
@@ -102,7 +103,7 @@ mod tests {
         let (mut m, mut out) = make();
         m.process(&[note_on(60), note_on(60)], &mut out);
         m.process(&[note_off(60)], &mut out);
-        assert_eq!(out, 0.0);
+        assert_eq!(out, false);
         assert!(m.active_notes.is_empty());
     }
 }

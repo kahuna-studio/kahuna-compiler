@@ -1,4 +1,5 @@
 use crate::midi::{MidiEvent, MidiQueue};
+use crate::ModuleEnv;
 
 pub struct MidiIn {
     midi_queue: MidiQueue,
@@ -25,7 +26,7 @@ pub struct AudioOut {
 }
 
 impl AudioOut {
-    pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
+    pub fn new(_module_env: &ModuleEnv) -> Self {
         Self {}
     }
 

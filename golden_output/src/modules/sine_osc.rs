@@ -1,37 +1,29 @@
-use kahuna_core::{kahuna_module, ModuleEnv, Range, Rate};
+use kahuna_core::{ModuleEnv, Range, Rate};
+use kahuna_macros::kahuna_module;
 use kahuna_std::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
 
-kahuna_module! {
-    struct SineOsc {
-        phase: AudioRatePhase,
-        frequency: f32,
-    }
+#[kahuna_module]
+pub struct SineOsc {
+    phase: AudioRatePhase,
 
-    inputs {
-        @frequency: Option<f32> [rate = Rate::ControlRate, range = Range::Float(20.0, 20000.0)],
-    }
+    #[input(parameter, rate = Rate::ControlRate, range = Range::Float(20.0, 20000.0))]
+    frequency: f32,
 
-    outputs {
-        ~out: f32 [rate = Rate::AudioRate, range = Range::Float(-1.0, 1.0)],
-    }
+    #[output(signal, rate = Rate::AudioRate, range = Range::Float(-1.0, 1.0))]
+    out: f32,
 }
 
 impl SineOsc {
     pub fn init(module_env: &ModuleEnv) -> Self {
         Self {
-            phase: AudioRatePhase::new(module_env.sample_rate),
-            frequency: 440.0,
+            phase: AudioRatePhase::new(module_env.sample_rate)
         }
     }
 
     pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
-        if let Some(freq) = inputs.frequency {
-            self.frequency = freq;
-        } else {
-        }
 
-        self.phase.process(self.frequency, outputs.out);
+        self.phase.process(inputs.frequency, outputs.out);
 
         for x in outputs.out.iter_mut() {
             *x = (*x * 2.0 * PI).sin();
@@ -51,10 +43,9 @@ mod tests {
         let freq_port = &SineOsc::PORTS[0];
         assert_eq!(freq_port.direction, PortDir::Input);
         assert_eq!(freq_port.name, "frequency");
-        assert_eq!(freq_port.required, Some(false));
+        assert_eq!(freq_port.required, Some(true));
         assert_eq!(freq_port.stream_type, PortKind::Parameter);
         assert_eq!(freq_port.rate, Some(Rate::ControlRate));
-        assert_eq!(freq_port.range, Some(Range::Float(20.0, 20000.0)));
         assert!(freq_port.value_type.matches(&PortType::of::<f32>()));
 
         let out_port = &SineOsc::PORTS[1];
@@ -63,7 +54,6 @@ mod tests {
         assert_eq!(out_port.required, None);
         assert_eq!(out_port.stream_type, PortKind::Signal);
         assert_eq!(out_port.rate, Some(Rate::AudioRate));
-        assert_eq!(out_port.range, Some(Range::Float(-1.0, 1.0)));
         assert!(out_port.value_type.matches(&PortType::of::<f32>()));
     }
 
@@ -76,7 +66,7 @@ mod tests {
         let mut osc = SineOsc::new(&env);
 
         let mut buffer = [0.0f32; 64];
-        let inputs = Inputs::new(Some(440.0));
+        let inputs = Inputs::new(440.0);
         let mut outputs = Outputs::new(&mut buffer);
 
         osc.process(&inputs, &mut outputs);

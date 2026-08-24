@@ -3,5 +3,5 @@ members = [
     "compiler",
     "kahuna-core",
     "golden_output",
-    "kahuna-std", "kahuna-runtime"]
+    "kahuna-std", "kahuna-runtime", "kahuna-macros"]
 resolver = "3"

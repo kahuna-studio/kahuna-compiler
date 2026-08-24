@@ -1,17 +1,21 @@
 use kahuna_core::midi::MidiEvent;
+use kahuna_core::ModuleEnv;
 
 pub struct MidiEventToFrequencyParameter {
     active_notes: Vec<u8>,
 }
 
 impl MidiEventToFrequencyParameter {
-    pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
+    pub fn new(_module_env: &ModuleEnv) -> Self {
         Self {
             active_notes: Vec::new(),
         }
     }
 
-    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut Option<f32>) {
+    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut f32) {
+
+        const DEFAULT_FREQUENCY: f32 = 440.0;
+
         for event in midi_in {
             match event {
                 MidiEvent::NoteOn { note, velocity } if *velocity > 0 => {
@@ -25,7 +29,7 @@ impl MidiEventToFrequencyParameter {
             }
         }
 
-        *out = self.active_notes.last().map(|&note| midi_note_to_frequency(note));
+        *out = self.active_notes.last().map(|&note| midi_note_to_frequency(note)).unwrap_or(DEFAULT_FREQUENCY);
     }
 }
 
@@ -38,8 +42,8 @@ fn midi_note_to_frequency(note: u8) -> f32 {
 mod tests {
     use super::*;
 
-    fn make() -> (MidiEventToFrequencyParameter, Option<f32>) {
-        (MidiEventToFrequencyParameter::new(48000, 256), None)
+    fn make() -> (MidiEventToFrequencyParameter, f32) {
+        (MidiEventToFrequencyParameter::new(&ModuleEnv { sample_rate: 48000, max_buffer_size: 256 }), 440.0)
     }
 
     fn note_on(note: u8) -> MidiEvent {
@@ -55,40 +59,40 @@ mod tests {
     }
 
     #[test]
-    fn no_events_yields_none() {
+    fn no_events_yields_default() {
         let (mut m, mut out) = make();
         m.process(&[], &mut out);
-        assert_eq!(out, None);
+        assert_eq!(out, 440.0);
     }
 
     #[test]
     fn note_on_yields_frequency() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
-        assert!((out.unwrap() - 440.0).abs() < 0.001);
+        assert!((out - 440.0).abs() < 0.001);
     }
 
     #[test]
-    fn note_off_yields_none_when_no_notes_remain() {
+    fn note_off_yields_default_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
         m.process(&[note_off(69)], &mut out);
-        assert_eq!(out, None);
+        assert_eq!(out, 440.0);
     }
 
     #[test]
-    fn note_on_velocity_0_yields_none_when_no_notes_remain() {
+    fn note_on_velocity_0_yields_default_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
         m.process(&[note_on_vel0(69)], &mut out);
-        assert_eq!(out, None);
+        assert_eq!(out, 440.0);
     }
 
     #[test]
     fn last_pressed_note_wins() {
         let (mut m, mut out) = make();
         m.process(&[note_on(60), note_on(64), note_on(67)], &mut out);
-        assert!((out.unwrap() - midi_note_to_frequency(67)).abs() < 0.001);
+        assert!((out - midi_note_to_frequency(67)).abs() < 0.001);
     }
 
     #[test]
@@ -96,7 +100,7 @@ mod tests {
         let (mut m, mut out) = make();
         m.process(&[note_on(60), note_on(64)], &mut out);
         m.process(&[note_off(64)], &mut out);
-        assert!((out.unwrap() - midi_note_to_frequency(60)).abs() < 0.001);
+        assert!((out - midi_note_to_frequency(60)).abs() < 0.001);
     }
 
     #[test]
@@ -104,7 +108,7 @@ mod tests {
         let (mut m, mut out) = make();
         m.process(&[note_on(69), note_on(69)], &mut out);
         m.process(&[note_off(69)], &mut out);
-        assert_eq!(out, None);
+        assert_eq!(out, 440.0);
         assert!(m.active_notes.is_empty());
     }
 }

@@ -1,8 +1,10 @@
+use kahuna_core::ModuleEnv;
+
 pub struct Multiply {
 }
 
 impl Multiply {
-    pub fn new(_sample_rate: u32, _max_buffer_size: usize) -> Self {
+    pub fn new(_module_env: &ModuleEnv) -> Self {
         Self {}
     }
 
