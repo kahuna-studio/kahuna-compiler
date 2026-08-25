@@ -8,14 +8,12 @@ enum Kind { Parameter, Signal, Event }
 struct PortAttrs {
     kind: Kind,
     rate: Option<syn::Expr>,
-    range: Option<syn::Expr>,
     enum_variants: Option<syn::Expr>,
 }
 
 fn parse_port_attrs(attr: &syn::Attribute) -> syn::Result<PortAttrs> {
     let mut kind = None;
     let mut rate = None;
-    let mut range = None;
     let mut enum_variants = None;
 
     attr.parse_nested_meta(|meta| {
@@ -27,12 +25,10 @@ fn parse_port_attrs(attr: &syn::Attribute) -> syn::Result<PortAttrs> {
             kind = Some(Kind::Event);
         } else if meta.path.is_ident("rate") {
             rate = Some(meta.value()?.parse()?);
-        } else if meta.path.is_ident("range") {
-            range = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("enum_variants") {
             enum_variants = Some(meta.value()?.parse()?);
         } else {
-            return Err(meta.error("expected parameter, signal, event, rate, range, or enum_variants"));
+            return Err(meta.error("expected parameter, signal, event, rate, or enum_variants"));
         }
         Ok(())
     })?;
@@ -41,7 +37,7 @@ fn parse_port_attrs(attr: &syn::Attribute) -> syn::Result<PortAttrs> {
         syn::Error::new_spanned(attr, "must specify parameter, signal, or event")
     })?;
 
-    Ok(PortAttrs { kind, rate, range, enum_variants })
+    Ok(PortAttrs { kind, rate, enum_variants })
 }
 
 /// If `ty` is `Option<T>`, returns `Some(T)`; otherwise `None`.
@@ -98,7 +94,6 @@ pub fn kahuna_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 (Kind::Signal, None) => quote! { Some(kahuna_core::Rate::AudioRate) },
                 (Kind::Event, None) => quote! { None },
             };
-            let range = p.range.as_ref().map(|r| quote! { Some(#r) }).unwrap_or(quote! { None });
             let value_type = match &p.enum_variants {
                 Some(v) => quote! { kahuna_core::PortType::of_enum::<#base_ty>(#v) },
                 None => quote! { kahuna_core::PortType::of::<#base_ty>() },
@@ -124,7 +119,7 @@ pub fn kahuna_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             in_specs.push(quote! {
                 kahuna_core::PortSpec {
                     name: #name_str, direction: kahuna_core::PortDir::Input,
-                    stream_type: #stream_kind, rate: #rate, range: #range,
+                    stream_type: #stream_kind, rate: #rate,
                     required: #required, value_type: #value_type,
                 },
             });
@@ -138,7 +133,6 @@ pub fn kahuna_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 (Kind::Signal, None) => quote! { Some(kahuna_core::Rate::AudioRate) },
                 (Kind::Event, None) => quote! { None },
             };
-            let range = p.range.as_ref().map(|r| quote! { Some(#r) }).unwrap_or(quote! { None });
             let value_type = match &p.enum_variants {
                 Some(v) => quote! { kahuna_core::PortType::of_enum::<#base_ty>(#v) },
                 None => quote! { kahuna_core::PortType::of::<#base_ty>() },
@@ -156,7 +150,7 @@ pub fn kahuna_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             out_specs.push(quote! {
                 kahuna_core::PortSpec {
                     name: #name_str, direction: kahuna_core::PortDir::Output,
-                    stream_type: #stream_kind, rate: #rate, range: #range,
+                    stream_type: #stream_kind, rate: #rate,
                     required: None, value_type: #value_type,
                 },
             });

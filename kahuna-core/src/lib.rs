@@ -28,12 +28,6 @@ pub enum Rate {
     ControlRate,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Range {
-    Float(f32, f32),
-    Int(i64, i64),
-}
-
 #[derive(Clone, Copy)]
 pub struct PortType {
     pub type_id: fn() -> TypeId,
@@ -98,7 +92,6 @@ pub struct PortSpec {
     pub direction: PortDir,
     pub stream_type: PortKind,
     pub rate: Option<Rate>,
-    pub range: Option<Range>,
     pub required: Option<bool>,
     pub value_type: PortType,
 }

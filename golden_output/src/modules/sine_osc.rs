@@ -1,4 +1,4 @@
-use kahuna_core::{ModuleEnv, Range, Rate};
+use kahuna_core::{ModuleEnv, Rate};
 use kahuna_macros::kahuna_module;
 use kahuna_std::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
@@ -7,10 +7,10 @@ use std::f32::consts::PI;
 pub struct SineOsc {
     phase: AudioRatePhase,
 
-    #[input(parameter, rate = Rate::ControlRate, range = Range::Float(20.0, 20000.0))]
+    #[input(parameter, rate = Rate::AudioRate)]
     frequency: f32,
 
-    #[output(signal, rate = Rate::AudioRate, range = Range::Float(-1.0, 1.0))]
+    #[output(signal, rate = Rate::AudioRate)]
     out: f32,
 }
 

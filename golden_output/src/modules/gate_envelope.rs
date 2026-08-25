@@ -1,4 +1,4 @@
-use kahuna_core::{ModuleEnv, Range, Rate};
+use kahuna_core::{ModuleEnv, Rate};
 use kahuna_macros::kahuna_module;
 
 #[kahuna_module]
@@ -7,7 +7,7 @@ pub struct GateEnvelope {
     #[input(parameter, rate = Rate::ControlRate)]
     gate: bool,
 
-    #[output(signal, rate = Rate::AudioRate, range = Range::Float(-1.0, 1.0))]
+    #[output(signal, rate = Rate::AudioRate)]
     envelope: f32
 }
 
