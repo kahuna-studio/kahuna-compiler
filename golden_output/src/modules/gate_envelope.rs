@@ -1,14 +1,14 @@
-use kahuna_core::{ModuleEnv, Rate};
+use kahuna_core::{ModuleEnv, Unipolar};
 use kahuna_macros::kahuna_module;
 
 #[kahuna_module]
 pub struct GateEnvelope {
 
-    #[input(parameter, rate = Rate::ControlRate)]
-    gate: bool,
+    #[input]
+    gate: Parameter<bool>,
 
-    #[output(signal, rate = Rate::AudioRate)]
-    envelope: f32
+    #[output]
+    envelope: Signal<Unipolar>
 }
 
 impl GateEnvelope {
@@ -26,27 +26,27 @@ impl GateEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kahuna_core::{KahunaModule, PortDir, PortKind, PortType};
+    use kahuna_core::{KahunaModule, PortDirection, Rate, StreamKind, ValueType};
 
     #[test]
     fn test_gate_envelope_ports() {
         assert_eq!(GateEnvelope::PORTS.len(), 2);
 
         let gate_port = &GateEnvelope::PORTS[0];
-        assert_eq!(gate_port.direction, PortDir::Input);
+        assert_eq!(gate_port.direction, PortDirection::Input);
         assert_eq!(gate_port.name, "gate");
         assert_eq!(gate_port.required, Some(true));
-        assert_eq!(gate_port.stream_type, PortKind::Parameter);
+        assert_eq!(gate_port.stream_kind, StreamKind::Parameter);
         assert_eq!(gate_port.rate, Some(Rate::ControlRate));
-        assert!(gate_port.value_type.matches(&PortType::of::<bool>()));
+        assert!(gate_port.value_type.matches(&ValueType::of::<bool>()));
 
         let env_port = &GateEnvelope::PORTS[1];
-        assert_eq!(env_port.direction, PortDir::Output);
+        assert_eq!(env_port.direction, PortDirection::Output);
         assert_eq!(env_port.name, "envelope");
         assert_eq!(env_port.required, None);
-        assert_eq!(env_port.stream_type, PortKind::Signal);
+        assert_eq!(env_port.stream_kind, StreamKind::Signal);
         assert_eq!(env_port.rate, Some(Rate::AudioRate));
-        assert!(env_port.value_type.matches(&PortType::of::<f32>()));
+        assert!(env_port.value_type.matches(&ValueType::of::<f32>()));
     }
 
     #[test]
@@ -55,10 +55,10 @@ mod tests {
         let mut gate = GateEnvelope::new(&env);
 
         let mut buffer = [0.0f32; 16];
-        let inputs = Inputs::new(true);
+        let inputs = Inputs::new(false);
         let mut outputs = Outputs::new(&mut buffer);
 
         gate.process(&inputs, &mut outputs);
-        assert!(buffer.iter().all(|&s| s == 1.0));
+        assert!(buffer.iter().all(|&s| s == 0.0));
     }
 }

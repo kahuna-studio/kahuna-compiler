@@ -1,22 +1,68 @@
+use std::marker::PhantomData;
+
 pub mod port_manifest;
 pub mod midi;
 pub mod patch;
 pub mod io_nodes;
 
 use std::any::TypeId;
-
+use crate::midi::MidiEvent;
 // ============================================================================
 // Core Reflection & Metadata Types
 // ============================================================================
 
+
+pub struct Signal<T>(PhantomData<T>);
+pub struct Parameter<T>(PhantomData<T>);
+pub struct Event<T>(PhantomData<T>);
+
+pub type Unipolar = f32;
+pub type Bipolar = f32;
+
+pub type Audio = Signal<Bipolar>;
+pub type Control = Parameter<Unipolar>;
+pub type Midi = Event<MidiEvent>;
+
+pub trait StreamType {
+    type Value: 'static;
+    type Input<'a>;
+    type Output<'a>;
+    const KIND: StreamKind;
+    const DEFAULT_RATE: Option<Rate>;
+}
+
+impl<T: 'static> StreamType for Signal<T> {
+    type Value = T;
+    type Input<'a> = &'a [T];
+    type Output<'a> = &'a mut [T];
+    const KIND: StreamKind = StreamKind::Signal;
+    const DEFAULT_RATE: Option<Rate> = Some(Rate::AudioRate);
+}
+
+impl<T: 'static> StreamType for Parameter<T> {
+    type Value = T;
+    type Input<'a> = T;
+    type Output<'a> = &'a mut T;
+    const KIND: StreamKind = StreamKind::Parameter;
+    const DEFAULT_RATE: Option<Rate> = Some(Rate::ControlRate);
+}
+
+impl<T: 'static> StreamType for Event<T> {
+    type Value = T;
+    type Input<'a> = &'a [T];
+    type Output<'a> = &'a mut Vec<T>;
+    const KIND: StreamKind = StreamKind::Event;
+    const DEFAULT_RATE: Option<Rate> = None;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortDir {
+pub enum PortDirection {
     Input,
     Output,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortKind {
+pub enum StreamKind {
     Signal,    // Continuous audio/control stream (~)
     Parameter, // Stream carrying parameter updates (@)
     Event,     // Discrete asynchronous events (^)
@@ -29,13 +75,13 @@ pub enum Rate {
 }
 
 #[derive(Clone, Copy)]
-pub struct PortType {
+pub struct ValueType {
     pub type_id: fn() -> TypeId,
     pub canonical_path: fn() -> &'static str,
     pub enum_variants: Option<&'static [&'static str]>,
 }
 
-impl PortType {
+impl ValueType {
     pub const fn of<T: 'static>() -> Self {
         Self {
             type_id: TypeId::of::<T>,
@@ -53,7 +99,7 @@ impl PortType {
     }
 
     #[inline]
-    pub fn matches(&self, other: &PortType) -> bool {
+    pub fn matches(&self, other: &ValueType) -> bool {
         (self.type_id)() == (other.type_id)()
     }
 
@@ -65,7 +111,7 @@ impl PortType {
     }
 }
 
-impl std::fmt::Debug for PortType {
+impl std::fmt::Debug for ValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PortType")
             .field("canonical_path", &self.canonical_path)
@@ -74,7 +120,7 @@ impl std::fmt::Debug for PortType {
     }
 }
 
-impl PartialEq for PortType {
+impl PartialEq for ValueType {
     fn eq(&self, other: &Self) -> bool {
         self.matches(other)
     }
@@ -87,13 +133,13 @@ impl PartialEq for PortType {
 /// - Event inputs: always `Some(false)` — unconnected is a valid empty stream.
 /// - Outputs: always `None` — the concept doesn't apply to outputs.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PortSpec {
+pub struct PortSpecification {
     pub name: &'static str,
-    pub direction: PortDir,
-    pub stream_type: PortKind,
+    pub direction: PortDirection,
+    pub stream_kind: StreamKind,
     pub rate: Option<Rate>,
     pub required: Option<bool>,
-    pub value_type: PortType,
+    pub value_type: ValueType,
 }
 
 // ============================================================================
@@ -107,6 +153,6 @@ pub struct ModuleEnv {
 }
 
 pub trait KahunaModule: Sized {
-    const PORTS: &'static [PortSpec];
+    const PORTS: &'static [PortSpecification];
     fn new(env: &ModuleEnv) -> Self;
 }

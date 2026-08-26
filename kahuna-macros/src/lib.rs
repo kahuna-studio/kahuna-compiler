@@ -1,198 +1,371 @@
+use kahuna_core::{Rate, StreamKind};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::parse::ParseStream;
+use syn::{Data, DeriveInput, Field, Fields, GenericArgument, Ident, PathArguments, Type};
 
-#[derive(Clone, Copy)]
-enum Kind { Parameter, Signal, Event }
-
-struct PortAttrs {
-    kind: Kind,
-    rate: Option<syn::Expr>,
-    enum_variants: Option<syn::Expr>,
+enum Direction {
+    Input,
+    Output,
 }
 
-fn parse_port_attrs(attr: &syn::Attribute) -> syn::Result<PortAttrs> {
-    let mut kind = None;
-    let mut rate = None;
-    let mut enum_variants = None;
-
-    attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("parameter") {
-            kind = Some(Kind::Parameter);
-        } else if meta.path.is_ident("signal") {
-            kind = Some(Kind::Signal);
-        } else if meta.path.is_ident("event") {
-            kind = Some(Kind::Event);
-        } else if meta.path.is_ident("rate") {
-            rate = Some(meta.value()?.parse()?);
-        } else if meta.path.is_ident("enum_variants") {
-            enum_variants = Some(meta.value()?.parse()?);
-        } else {
-            return Err(meta.error("expected parameter, signal, event, rate, or enum_variants"));
-        }
-        Ok(())
-    })?;
-
-    let kind = kind.ok_or_else(|| {
-        syn::Error::new_spanned(attr, "must specify parameter, signal, or event")
-    })?;
-
-    Ok(PortAttrs { kind, rate, enum_variants })
+enum FieldRole<'a> {
+    State(&'a Field),
+    Input(&'a Field),
+    Output(&'a Field),
 }
 
-/// If `ty` is `Option<T>`, returns `Some(T)`; otherwise `None`.
-fn unwrap_option(ty: &Type) -> Option<Type> {
-    let Type::Path(p) = ty else { return None };
-    let seg = p.path.segments.last()?;
-    if seg.ident != "Option" { return None; }
-    let PathArguments::AngleBracketed(args) = &seg.arguments else { return None };
-    args.args.iter().find_map(|a| match a {
-        GenericArgument::Type(t) => Some(t.clone()),
-        _ => None,
-    })
+struct PortConfiguration {
+    direction: Direction,
+    identifier: Ident,
+    stream_kind: StreamKind,
+    rate_by_type: Option<Rate>,
+    rate_override: Option<Rate>,
+    default_value: Option<syn::Expr>,
+    value_type: Type,
+}
+
+struct GeneratedPort {
+    field_declaration: proc_macro2::TokenStream,
+    constructor_parameter: proc_macro2::TokenStream,
+    constructor_initializer: proc_macro2::TokenStream,
+    specification: proc_macro2::TokenStream,
 }
 
 #[proc_macro_attribute]
-pub fn kahuna_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as DeriveInput);
-    let name = &input.ident;
-    let struct_attrs = &input.attrs;
-    let vis = &input.vis;
+pub fn kahuna_module(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    match expand(item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn expand(item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    let input: DeriveInput = syn::parse2(item)?;
+    let struct_name = &input.ident;
+    let struct_attributes = &input.attrs;
+    let visibility = &input.vis;
 
     let Data::Struct(data) = &input.data else {
-        return syn::Error::new_spanned(&input, "#[kahuna_module] only supports structs")
-          .to_compile_error().into();
+        return Err(syn::Error::new_spanned(&input, "#[kahuna_module] only supports structs"));
     };
     let Fields::Named(fields) = &data.fields else {
-        return syn::Error::new_spanned(&input, "#[kahuna_module] requires named fields")
-          .to_compile_error().into();
+        return Err(syn::Error::new_spanned(&input, "#[kahuna_module] requires named fields"));
     };
 
-    let mut state_fields = Vec::new();
-    let (mut in_fields, mut in_ctor_params, mut in_ctor_inits, mut in_specs) =
-      (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let (mut out_fields, mut out_ctor_params, mut out_ctor_inits, mut out_specs) =
-      (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    // classify: every field becomes exactly one role, or a compile error
+    let field_roles = fields.named.iter().map(classify_field).collect::<syn::Result<Vec<_>>>()?;
 
-    for field in &fields.named {
-        let fname = field.ident.clone().unwrap();
-        let fty = &field.ty;
-        let name_str = fname.to_string();
+    let state_fields: Vec<&Field> = field_roles.iter()
+      .filter_map(|role| match role {
+          FieldRole::State(field) => Some(*field),
+          _ => None,
+      })
+      .collect();
 
-        let input_attr = field.attrs.iter().find(|a| a.path().is_ident("input"));
-        let output_attr = field.attrs.iter().find(|a| a.path().is_ident("output"));
+    // parse: every input/output field becomes a validated PortConfiguration, or a compile error
+    let ports: Vec<PortConfiguration> = field_roles.iter()
+      .filter_map(|role| match role {
+          FieldRole::Input(field) => Some((Direction::Input, *field)),
+          FieldRole::Output(field) => Some((Direction::Output, *field)),
+          FieldRole::State(_) => None,
+      })
+      .map(|(direction, field)| parse_port(direction, field))
+      .collect::<syn::Result<Vec<_>>>()?;
 
-        if let Some(attr) = input_attr {
-            let p = match parse_port_attrs(attr) { Ok(p) => p, Err(e) => return e.to_compile_error().into() };
-            let optional = unwrap_option(fty);
-            let base_ty = optional.clone().unwrap_or_else(|| fty.clone());
-            let is_opt = optional.is_some();
+    // generate: pure, infallible — parse_port already validated everything
+    let (input_ports, output_ports): (Vec<&PortConfiguration>, Vec<&PortConfiguration>) = ports.iter()
+      .partition(|port| matches!(port.direction, Direction::Input));
 
-            let rate = match (&p.kind, &p.rate) {
-                (_, Some(r)) => quote! { Some(#r) },
-                (Kind::Parameter, None) => quote! { Some(kahuna_core::Rate::ControlRate) },
-                (Kind::Signal, None) => quote! { Some(kahuna_core::Rate::AudioRate) },
-                (Kind::Event, None) => quote! { None },
-            };
-            let value_type = match &p.enum_variants {
-                Some(v) => quote! { kahuna_core::PortType::of_enum::<#base_ty>(#v) },
-                None => quote! { kahuna_core::PortType::of::<#base_ty>() },
-            };
+    let generated_input_ports: Vec<GeneratedPort> = input_ports.into_iter().map(generate_input_port).collect();
+    let generated_output_ports: Vec<GeneratedPort> = output_ports.into_iter().map(generate_output_port).collect();
 
-            let (field_ty, required, stream_kind) = match p.kind {
-                Kind::Parameter => {
-                    let ty = if is_opt { quote!{ Option<#base_ty> } } else { quote!{ #base_ty } };
-                    let req = if is_opt { quote!{ Some(false) } } else { quote!{ Some(true) } };
-                    (ty, req, quote!{ kahuna_core::PortKind::Parameter })
-                }
-                Kind::Signal => {
-                    let ty = if is_opt { quote!{ Option<&'a [#base_ty]> } } else { quote!{ &'a [#base_ty] } };
-                    let req = if is_opt { quote!{ Some(false) } } else { quote!{ Some(true) } };
-                    (ty, req, quote!{ kahuna_core::PortKind::Signal })
-                }
-                Kind::Event => (quote!{ &'a [#base_ty] }, quote!{ Some(false) }, quote!{ kahuna_core::PortKind::Event }),
-            };
+    // assemble: project the fields quote needs to repeat over
+    let input_field_declarations = generated_input_ports.iter().map(|port| &port.field_declaration);
+    let input_constructor_parameters = generated_input_ports.iter().map(|port| &port.constructor_parameter);
+    let input_constructor_initializers = generated_input_ports.iter().map(|port| &port.constructor_initializer);
+    let input_specifications = generated_input_ports.iter().map(|port| &port.specification);
 
-            in_fields.push(quote! { pub #fname: #field_ty, });
-            in_ctor_params.push(quote! { #fname: #field_ty, });
-            in_ctor_inits.push(quote! { #fname, });
-            in_specs.push(quote! {
-                kahuna_core::PortSpec {
-                    name: #name_str, direction: kahuna_core::PortDir::Input,
-                    stream_type: #stream_kind, rate: #rate,
-                    required: #required, value_type: #value_type,
-                },
-            });
-        } else if let Some(attr) = output_attr {
-            let p = match parse_port_attrs(attr) { Ok(p) => p, Err(e) => return e.to_compile_error().into() };
-            let base_ty = fty.clone();
+    let output_field_declarations = generated_output_ports.iter().map(|port| &port.field_declaration);
+    let output_constructor_parameters = generated_output_ports.iter().map(|port| &port.constructor_parameter);
+    let output_constructor_initializers = generated_output_ports.iter().map(|port| &port.constructor_initializer);
+    let output_specifications = generated_output_ports.iter().map(|port| &port.specification);
 
-            let rate = match (&p.kind, &p.rate) {
-                (_, Some(r)) => quote! { Some(#r) },
-                (Kind::Parameter, None) => quote! { Some(kahuna_core::Rate::ControlRate) },
-                (Kind::Signal, None) => quote! { Some(kahuna_core::Rate::AudioRate) },
-                (Kind::Event, None) => quote! { None },
-            };
-            let value_type = match &p.enum_variants {
-                Some(v) => quote! { kahuna_core::PortType::of_enum::<#base_ty>(#v) },
-                None => quote! { kahuna_core::PortType::of::<#base_ty>() },
-            };
-
-            let (field_ty, stream_kind) = match p.kind {
-                Kind::Parameter => (quote!{ &'a mut #base_ty }, quote!{ kahuna_core::PortKind::Parameter }),
-                Kind::Signal => (quote!{ &'a mut [#base_ty] }, quote!{ kahuna_core::PortKind::Signal }),
-                Kind::Event => (quote!{ &'a mut Vec<#base_ty> }, quote!{ kahuna_core::PortKind::Event }),
-            };
-
-            out_fields.push(quote! { pub #fname: #field_ty, });
-            out_ctor_params.push(quote! { #fname: #field_ty, });
-            out_ctor_inits.push(quote! { #fname, });
-            out_specs.push(quote! {
-                kahuna_core::PortSpec {
-                    name: #name_str, direction: kahuna_core::PortDir::Output,
-                    stream_type: #stream_kind, rate: #rate,
-                    required: None, value_type: #value_type,
-                },
-            });
-        } else {
-            state_fields.push(field.clone());
-        }
-    }
-
-    quote! {
-        #(#struct_attrs)*
-        #vis struct #name {
+    Ok(quote! {
+        #(#struct_attributes)*
+        #visibility struct #struct_name {
             #(#state_fields),*
         }
 
         pub struct Inputs<'a> {
-            #(#in_fields)*
+            #(#input_field_declarations)*
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
         impl<'a> Inputs<'a> {
-            pub fn new(#(#in_ctor_params)*) -> Self {
-                Self { #(#in_ctor_inits)* _phantom: ::std::marker::PhantomData }
+            pub fn new(#(#input_constructor_parameters)*) -> Self {
+                Self { #(#input_constructor_initializers)* _phantom: ::std::marker::PhantomData }
             }
         }
 
         pub struct Outputs<'a> {
-            #(#out_fields)*
+            #(#output_field_declarations)*
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
         impl<'a> Outputs<'a> {
-            pub fn new(#(#out_ctor_params)*) -> Self {
-                Self { #(#out_ctor_inits)* _phantom: ::std::marker::PhantomData }
+            pub fn new(#(#output_constructor_parameters)*) -> Self {
+                Self { #(#output_constructor_initializers)* _phantom: ::std::marker::PhantomData }
             }
         }
 
-        impl kahuna_core::KahunaModule for #name {
-            const PORTS: &'static [kahuna_core::PortSpec] = &[
-                #(#in_specs)*
-                #(#out_specs)*
+        impl kahuna_core::KahunaModule for #struct_name {
+            const PORTS: &'static [kahuna_core::PortSpecification] = &[
+                #(#input_specifications)*
+                #(#output_specifications)*
             ];
             fn new(env: &kahuna_core::ModuleEnv) -> Self {
                 Self::init(env)
             }
         }
-    }.into()
+    })
+}
+
+fn classify_field(field: &Field) -> syn::Result<FieldRole<'_>> {
+    let has_input_attribute = field.attrs.iter().any(|attribute| attribute.path().is_ident("input"));
+    let has_output_attribute = field.attrs.iter().any(|attribute| attribute.path().is_ident("output"));
+
+    match (has_input_attribute, has_output_attribute) {
+        (false, false) => Ok(FieldRole::State(field)),
+        (true, false) => Ok(FieldRole::Input(field)),
+        (false, true) => Ok(FieldRole::Output(field)),
+        (true, true) => Err(syn::Error::new_spanned(
+            field,
+            "a field cannot be both #[input] and #[output]",
+        )),
+    }
+}
+
+fn generate_input_port(port: &PortConfiguration) -> GeneratedPort {
+    let field_identifier = &port.identifier;
+    let value_type = &port.value_type;
+    let port_name = port.identifier.to_string();
+    let stream_kind_tokens = stream_kind_to_tokens(port.stream_kind);
+    let rate_tokens = rate_tokens_for(port);
+
+    let (field_type, constructor_parameter_type, constructor_initializer, required_tokens) =
+      match port.stream_kind {
+          StreamKind::Parameter => match &port.default_value {
+              // Has a default: the Inputs field stays a concrete T (never Option).
+              // The constructor takes Option<T> and resolves the default itself,
+              // so process() bodies never see an Option again.
+              Some(default_value) => (
+                  quote! { #value_type },
+                  quote! { Option<#value_type> },
+                  quote! { #field_identifier: #field_identifier.unwrap_or(#default_value), },
+                  quote! { Some(false) },
+              ),
+              None => (
+                  quote! { #value_type },
+                  quote! { #value_type },
+                  quote! { #field_identifier, },
+                  quote! { Some(true) },
+              ),
+          },
+          StreamKind::Signal => (
+              quote! { &'a [#value_type] },
+              quote! { &'a [#value_type] },
+              quote! { #field_identifier, },
+              quote! { Some(true) },
+          ),
+          StreamKind::Event => (
+              quote! { &'a [#value_type] },
+              quote! { &'a [#value_type] },
+              quote! { #field_identifier, },
+              quote! { Some(false) },
+          ),
+      };
+
+    GeneratedPort {
+        field_declaration: quote! { pub #field_identifier: #field_type, },
+        constructor_parameter: quote! { #field_identifier: #constructor_parameter_type, },
+        constructor_initializer,
+        specification: quote! {
+            kahuna_core::PortSpecification {
+                name: #port_name,
+                direction: kahuna_core::PortDirection::Input,
+                stream_kind: #stream_kind_tokens,
+                rate: #rate_tokens,
+                required: #required_tokens,
+                value_type: kahuna_core::ValueType::of::<#value_type>(),
+            },
+        },
+    }
+}
+
+fn generate_output_port(port: &PortConfiguration) -> GeneratedPort {
+    let field_identifier = &port.identifier;
+    let value_type = &port.value_type;
+    let port_name = port.identifier.to_string();
+    let stream_kind_tokens = stream_kind_to_tokens(port.stream_kind);
+    let rate_tokens = rate_tokens_for(port);
+
+    let field_type = match port.stream_kind {
+        StreamKind::Parameter => quote! { &'a mut #value_type },
+        StreamKind::Signal => quote! { &'a mut [#value_type] },
+        StreamKind::Event => quote! { &'a mut Vec<#value_type> },
+    };
+
+    GeneratedPort {
+        field_declaration: quote! { pub #field_identifier: #field_type, },
+        constructor_parameter: quote! { #field_identifier: #field_type, },
+        constructor_initializer: quote! { #field_identifier, },
+        specification: quote! {
+            kahuna_core::PortSpecification {
+                name: #port_name,
+                direction: kahuna_core::PortDirection::Output,
+                stream_kind: #stream_kind_tokens,
+                rate: #rate_tokens,
+                required: None,
+                value_type: kahuna_core::ValueType::of::<#value_type>(),
+            },
+        },
+    }
+}
+
+fn rate_tokens_for(port: &PortConfiguration) -> proc_macro2::TokenStream {
+    match port.rate_override.or(port.rate_by_type) {
+        Some(rate) => {
+            let rate_tokens = rate_to_tokens(rate);
+            quote! { Some(#rate_tokens) }
+        }
+        None => quote! { None },
+    }
+}
+
+fn parse_port(direction: Direction, field: &Field) -> syn::Result<PortConfiguration> {
+    let field_identifier = field.ident.clone().unwrap();
+    let field_type = &field.ty;
+
+    let attribute = field
+      .attrs
+      .iter()
+      .find(|attribute| attribute.path().is_ident("input") || attribute.path().is_ident("output"))
+      .expect("classify_field already guaranteed this field has #[input] or #[output]");
+
+    let last_type_segment = match field_type {
+        Type::Path(type_path) => {
+            let segments = &type_path.path.segments;
+            if segments.len() > 1 {
+                return Err(syn::Error::new_spanned(attribute, "Qualified struct names are not supported"));
+            }
+            segments.last().unwrap()
+        }
+        _ => return Err(syn::Error::new_spanned(
+            attribute,
+            "Only types Audio, Control, Midi, Signal<T>, Parameter<T>, and Event<T> are allowed.",
+        )),
+    };
+
+    let (stream_kind, rate_by_type, value_type) = match last_type_segment.ident.to_string().as_str() {
+        "Audio" => (StreamKind::Signal, Some(Rate::AudioRate), syn::parse_quote!(kahuna_core::Bipolar)),
+        "Control" => (StreamKind::Parameter, Some(Rate::ControlRate), syn::parse_quote!(kahuna_core::Unipolar)),
+        "Midi" => (StreamKind::Event, None, syn::parse_quote!(kahuna_core::MidiEvent)),
+
+        "Signal" => (StreamKind::Signal, Some(Rate::AudioRate), extract_value_type(last_type_segment)?),
+        "Parameter" => (StreamKind::Parameter, Some(Rate::ControlRate), extract_value_type(last_type_segment)?),
+        "Event" => (StreamKind::Event, None, extract_value_type(last_type_segment)?),
+
+        _ => return Err(syn::Error::new_spanned(
+            attribute,
+            "Only types Audio, Control, Midi, Signal<T>, Parameter<T>, and Event<T> are allowed.",
+        )),
+    };
+
+    let mut rate_override: Option<Rate> = None;
+    let mut default_value: Option<syn::Expr> = None;
+    if matches!(attribute.meta, syn::Meta::List(_)) {
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rate") {
+                rate_override = Some(parse_rate_expression(meta.value()?)?);
+                Ok(())
+            } else if meta.path.is_ident("default") {
+                default_value = Some(meta.value()?.parse()?);
+                Ok(())
+            } else {
+                Err(meta.error("unknown key; expected `rate` or `default`"))
+            }
+        })?;
+    }
+
+    if stream_kind == StreamKind::Event && rate_override.is_some() {
+        return Err(syn::Error::new_spanned(
+            attribute,
+            "Event ports have no rate; `rate = ...` is not applicable here.",
+        ));
+    }
+    if default_value.is_some() && matches!(direction, Direction::Output) {
+        return Err(syn::Error::new_spanned(attribute, "`default` is not applicable to #[output] ports."));
+    }
+    if default_value.is_some() && stream_kind == StreamKind::Event {
+        return Err(syn::Error::new_spanned(
+            attribute,
+            "Event ports have no default; `default = ...` is not applicable here.",
+        ));
+    }
+
+    Ok(PortConfiguration {
+        direction,
+        identifier: field_identifier,
+        stream_kind,
+        rate_by_type,
+        rate_override,
+        default_value,
+        value_type,
+    })
+}
+
+fn parse_rate_expression(input: ParseStream) -> syn::Result<Rate> {
+    let path: syn::Path = input.parse()?;
+    let identifier = path
+      .segments
+      .last()
+      .ok_or_else(|| syn::Error::new_spanned(&path, "expected a Rate variant"))?
+      .ident
+      .to_string();
+
+    match identifier.as_str() {
+        "AudioRate" => Ok(Rate::AudioRate),
+        "ControlRate" => Ok(Rate::ControlRate),
+        _ => Err(syn::Error::new_spanned(&path, "expected `Rate::AudioRate` or `Rate::ControlRate`")),
+    }
+}
+
+fn extract_value_type(segment: &syn::PathSegment) -> syn::Result<Type> {
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(segment, "expected a generic type argument, e.g. Signal<f32>"));
+    };
+
+    let mut type_arguments = arguments.args.iter().filter_map(|argument| match argument {
+        GenericArgument::Type(argument_type) => Some(argument_type),
+        _ => None,
+    });
+
+    match (type_arguments.next(), type_arguments.next()) {
+        (Some(argument_type), None) => Ok(argument_type.clone()),
+        _ => Err(syn::Error::new_spanned(segment, "expected exactly one generic type argument, e.g. Signal<f32>")),
+    }
+}
+
+fn rate_to_tokens(rate: Rate) -> proc_macro2::TokenStream {
+    match rate {
+        Rate::AudioRate => quote! { kahuna_core::Rate::AudioRate },
+        Rate::ControlRate => quote! { kahuna_core::Rate::ControlRate },
+    }
+}
+
+fn stream_kind_to_tokens(stream_kind: StreamKind) -> proc_macro2::TokenStream {
+    match stream_kind {
+        StreamKind::Signal => quote! { kahuna_core::StreamKind::Signal },
+        StreamKind::Parameter => quote! { kahuna_core::StreamKind::Parameter },
+        StreamKind::Event => quote! { kahuna_core::StreamKind::Event },
+    }
 }

@@ -1,7 +1,7 @@
 [package]
 name = "kahuna-synth"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 kahuna-core = { path = "../kahuna-core" }

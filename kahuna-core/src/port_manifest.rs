@@ -1,4 +1,4 @@
-use crate::{PortDir, PortKind, PortSpec, Rate};
+use crate::{PortDirection, StreamKind, PortSpecification, Rate};
 
 #[derive(serde::Serialize)]
 pub struct PortManifest {
@@ -11,13 +11,13 @@ pub struct PortManifest {
   enum_variants: Option<&'static [&'static str]>,
 }
 
-impl From<&PortSpec> for PortManifest {
-  fn from(p: &PortSpec) -> Self {
+impl From<&PortSpecification> for PortManifest {
+  fn from(p: &PortSpecification) -> Self {
     Self {
-      direction: match p.direction { PortDir::Input => "input", PortDir::Output => "output" },
+      direction: match p.direction { PortDirection::Input => "input", PortDirection::Output => "output" },
       name: p.name,
       required: p.required,
-      stream_type: match p.stream_type { PortKind::Signal => "signal", PortKind::Parameter => "parameter", PortKind::Event => "event" },
+      stream_type: match p.stream_kind { StreamKind::Signal => "signal", StreamKind::Parameter => "parameter", StreamKind::Event => "event" },
       rate: p.rate.map(|r| match r { Rate::AudioRate => "audio", Rate::ControlRate => "control" }),
       value_type: p.value_type.short_name(),
       enum_variants: p.value_type.enum_variants,

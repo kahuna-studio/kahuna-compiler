@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 kahuna-core = { path = "../kahuna-core" }
-cpal = "0.18.1"
+cpal = "0.18.2"
 midir = "0.11.0"

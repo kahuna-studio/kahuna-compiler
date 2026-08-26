@@ -1,4 +1,4 @@
-use kahuna_core::{ModuleEnv, Rate};
+use kahuna_core::{ModuleEnv};
 use kahuna_macros::kahuna_module;
 use kahuna_std::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
@@ -7,11 +7,11 @@ use std::f32::consts::PI;
 pub struct SineOsc {
     phase: AudioRatePhase,
 
-    #[input(parameter, rate = Rate::AudioRate)]
-    frequency: f32,
+    #[input]
+    frequency: Control,
 
-    #[output(signal, rate = Rate::AudioRate)]
-    out: f32,
+    #[output(rate = Rate::AudioRate)]
+    out: Audio,
 }
 
 impl SineOsc {
@@ -34,27 +34,27 @@ impl SineOsc {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kahuna_core::{KahunaModule, PortDir, PortKind, PortType};
+    use kahuna_core::{KahunaModule, PortDirection, Rate, StreamKind, ValueType};
 
     #[test]
     fn test_ports_reflection() {
         assert_eq!(SineOsc::PORTS.len(), 2);
 
         let freq_port = &SineOsc::PORTS[0];
-        assert_eq!(freq_port.direction, PortDir::Input);
+        assert_eq!(freq_port.direction, PortDirection::Input);
         assert_eq!(freq_port.name, "frequency");
         assert_eq!(freq_port.required, Some(true));
-        assert_eq!(freq_port.stream_type, PortKind::Parameter);
+        assert_eq!(freq_port.stream_kind, StreamKind::Parameter);
         assert_eq!(freq_port.rate, Some(Rate::ControlRate));
-        assert!(freq_port.value_type.matches(&PortType::of::<f32>()));
+        assert!(freq_port.value_type.matches(&ValueType::of::<f32>()));
 
         let out_port = &SineOsc::PORTS[1];
-        assert_eq!(out_port.direction, PortDir::Output);
+        assert_eq!(out_port.direction, PortDirection::Output);
         assert_eq!(out_port.name, "out");
         assert_eq!(out_port.required, None);
-        assert_eq!(out_port.stream_type, PortKind::Signal);
+        assert_eq!(out_port.stream_kind, StreamKind::Signal);
         assert_eq!(out_port.rate, Some(Rate::AudioRate));
-        assert!(out_port.value_type.matches(&PortType::of::<f32>()));
+        assert!(out_port.value_type.matches(&ValueType::of::<f32>()));
     }
 
     #[test]

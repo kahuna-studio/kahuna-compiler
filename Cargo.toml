@@ -1,7 +1,10 @@
 [workspace]
 members = [
     "compiler",
-    "kahuna-core",
     "golden_output",
-    "kahuna-std", "kahuna-runtime", "kahuna-macros"]
+    "kahuna-core",
+    "kahuna-macros",
+    "kahuna-runtime",
+    "kahuna-std"
+]
 resolver = "3"

@@ -1,11 +1,13 @@
 [package]
 name = "kahuna-macros"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 proc-macro = true
 
 [dependencies]
+kahuna-core = { path = "../kahuna-core" }
 syn = { version = "3.0.4", features = ["full", "extra-traits"] }
-quote = "1.0"
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
