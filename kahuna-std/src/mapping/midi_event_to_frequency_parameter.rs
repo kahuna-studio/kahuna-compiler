@@ -3,19 +3,18 @@ use kahuna_core::ModuleEnv;
 
 pub struct MidiEventToFrequencyParameter {
     active_notes: Vec<u8>,
+    last_frequency: f32,
 }
 
 impl MidiEventToFrequencyParameter {
     pub fn new(_module_env: &ModuleEnv) -> Self {
         Self {
             active_notes: Vec::new(),
+            last_frequency: 440.0,
         }
     }
 
     pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut f32) {
-
-        const DEFAULT_FREQUENCY: f32 = 440.0;
-
         for event in midi_in {
             match event {
                 MidiEvent::NoteOn { note, velocity } if *velocity > 0 => {
@@ -29,7 +28,13 @@ impl MidiEventToFrequencyParameter {
             }
         }
 
-        *out = self.active_notes.last().map(|&note| midi_note_to_frequency(note)).unwrap_or(DEFAULT_FREQUENCY);
+        *out = self.active_notes.last()
+            .map(|&note| {
+                let freq = midi_note_to_frequency(note);
+                self.last_frequency = freq;
+                freq
+            })
+            .unwrap_or(self.last_frequency);
     }
 }
 
@@ -66,6 +71,15 @@ mod tests {
     }
 
     #[test]
+    fn note_off_holds_last_frequency() {
+        let (mut m, mut out) = make();
+        m.process(&[note_on(69)], &mut out);
+        let freq_at_69 = out;
+        m.process(&[note_off(69)], &mut out);
+        assert!((out - freq_at_69).abs() < 0.001);
+    }
+
+    #[test]
     fn note_on_yields_frequency() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
@@ -73,19 +87,21 @@ mod tests {
     }
 
     #[test]
-    fn note_off_yields_default_when_no_notes_remain() {
+    fn note_off_holds_last_frequency_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
+        let freq_at_69 = out;
         m.process(&[note_off(69)], &mut out);
-        assert_eq!(out, 440.0);
+        assert!((out - freq_at_69).abs() < 0.001);
     }
 
     #[test]
-    fn note_on_velocity_0_yields_default_when_no_notes_remain() {
+    fn note_on_velocity_0_holds_last_frequency_when_no_notes_remain() {
         let (mut m, mut out) = make();
         m.process(&[note_on(69)], &mut out);
+        let freq_at_69 = out;
         m.process(&[note_on_vel0(69)], &mut out);
-        assert_eq!(out, 440.0);
+        assert!((out - freq_at_69).abs() < 0.001);
     }
 
     #[test]

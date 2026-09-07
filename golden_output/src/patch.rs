@@ -1,4 +1,4 @@
-use crate::modules::gate_envelope::{self, GateEnvelope};
+use crate::modules::adsr_envelope::{self, AdsrEnvelope};
 use crate::modules::sine_osc::{self, SineOsc};
 use kahuna_core::io_nodes::{AudioOutputNode, IoNodeFactory, MidiInputNode};
 use kahuna_core::midi::MidiEvent;
@@ -17,7 +17,7 @@ pub struct PatchState {
     poly_0__midi_events_to_frequency_parameter_0__out: Vec<f32>,
     poly_0__sine_osc_0__out: PolyBuffer<f32>,
     poly_0__midi_events_to_gate_parameter_0__out: Vec<bool>,
-    poly_0__gate_envelope_0__envelope: PolyBuffer<f32>,
+    poly_0__adsr_envelope_0__envelope: PolyBuffer<f32>,
     poly_0__multiply_0__out: PolyBuffer<f32>,
     merge__out: Vec<f32>,
 }
@@ -30,7 +30,7 @@ impl PatchState {
             poly_0__midi_events_to_frequency_parameter_0__out: vec![0.0; poly_0_voices],
             poly_0__sine_osc_0__out: PolyBuffer::new(poly_0_voices, max_buffer_size),
             poly_0__midi_events_to_gate_parameter_0__out: vec![false; poly_0_voices],
-            poly_0__gate_envelope_0__envelope: PolyBuffer::new(poly_0_voices, max_buffer_size),
+            poly_0__adsr_envelope_0__envelope: PolyBuffer::new(poly_0_voices, max_buffer_size),
             poly_0__multiply_0__out: PolyBuffer::new(poly_0_voices, max_buffer_size),
             merge__out: vec![0.0; max_buffer_size],
         }
@@ -46,7 +46,7 @@ pub struct Patch {
     poly_0__midi_events_to_frequency_parameter_0: Vec<MidiEventToFrequencyParameter>,
     poly_0__sine_osc_0: Vec<SineOsc>,
     poly_0__midi_events_to_gate_parameter_0: Vec<MidiEventToGateParameter>,
-    poly_0__gate_envelope_0: Vec<GateEnvelope>,
+    poly_0__adsr_envelope_0: Vec<AdsrEnvelope>,
     poly_0__multiply_0: Vec<Multiply>,
     audio_out_0: Box<dyn AudioOutputNode>,
 
@@ -79,8 +79,8 @@ impl Patch {
                 .map(|_| MidiEventToGateParameter::new(&env))
                 .collect(),
 
-            poly_0__gate_envelope_0: (0..poly_0_voices)
-                .map(|_| GateEnvelope::new(&env))
+            poly_0__adsr_envelope_0: (0..poly_0_voices)
+                .map(|_| AdsrEnvelope::new(&env))
                 .collect(),
 
             poly_0__multiply_0: (0..poly_0_voices).map(|_| Multiply::new(&env)).collect(),
@@ -122,14 +122,18 @@ impl KahunaPatch for Patch {
                 &mut self.state.poly_0__midi_events_to_gate_parameter_0__out[voice],
             );
 
-            self.poly_0__gate_envelope_0[voice].process(
-                &gate_envelope::Inputs::new(
+            self.poly_0__adsr_envelope_0[voice].process(
+                &adsr_envelope::Inputs::new(
                     self.state.poly_0__midi_events_to_gate_parameter_0__out[voice],
+                    None,
+                    None,
+                    None,
+                    None,
                 ),
-                &mut gate_envelope::Outputs::new(
+                &mut adsr_envelope::Outputs::new(
                     &mut self
                         .state
-                        .poly_0__gate_envelope_0__envelope
+                        .poly_0__adsr_envelope_0__envelope
                         .voice_mut(voice)[..frames],
                 ),
             );
@@ -137,7 +141,7 @@ impl KahunaPatch for Patch {
             self.poly_0__multiply_0[voice].process(
                 &[
                     &self.state.poly_0__sine_osc_0__out.voice(voice)[..frames],
-                    &self.state.poly_0__gate_envelope_0__envelope.voice(voice)[..frames],
+                    &self.state.poly_0__adsr_envelope_0__envelope.voice(voice)[..frames],
                 ],
                 &mut self.state.poly_0__multiply_0__out.voice_mut(voice)[..frames],
             );
