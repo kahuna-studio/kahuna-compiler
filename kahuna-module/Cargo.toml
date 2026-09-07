@@ -1,5 +1,5 @@
 [package]
-name = "kahuna-macros"
+name = "kahuna-module"
 version = "0.1.0"
 edition = "2024"
 

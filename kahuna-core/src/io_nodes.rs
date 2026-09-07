@@ -1,48 +1,24 @@
-use crate::midi::{MidiEvent, MidiQueue};
-use crate::ModuleEnv;
+use crate::midi::MidiEvent;
 
-pub struct MidiIn {
-    midi_queue: MidiQueue,
+pub trait IoNodeFactory {
+  fn create_midi_in(&self) -> Box<dyn MidiInputNode>;
+  fn create_midi_out(&self) -> Box<dyn MidiOutputNode>;
+  fn create_audio_in(&self) -> Box<dyn AudioInputNode>;
+  fn create_audio_out(&self) -> Box<dyn AudioOutputNode>;
 }
 
-impl MidiIn {
-    pub fn new(midi_queue: MidiQueue) -> Self {
-        Self {
-            midi_queue,
-        }
-    }
-
-     pub fn process(&self, midi_events: &mut Vec<MidiEvent>) {
-
-        midi_events.clear();
-        midi_events.extend(
-            self.midi_queue.lock().unwrap().drain(..)
-        );
-    }
+pub trait AudioOutputNode: Send {
+  fn process(&mut self, left: &[f32], right: &[f32]);
 }
 
-
-pub struct AudioOut {
+pub trait AudioInputNode: Send {
+  fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }
 
-impl AudioOut {
-    pub fn new(_module_env: &ModuleEnv) -> Self {
-        Self {}
-    }
+pub trait MidiInputNode: Send {
+  fn process(&mut self, out: &mut Vec<MidiEvent>);
+}
 
-    pub fn process(&self, left_in: &[f32], right_in: &[f32], host_audio_out: &mut [f32]) {
-
-        let frames = host_audio_out.len() / 2;
-
-        for frame in 0..frames {
-            for ch in 0..2 {
-                let sample = if ch == 0 {
-                    left_in[frame]
-                } else {
-                    right_in[frame]
-                };
-                host_audio_out[frame * 2 + ch] = sample;
-            }
-        }
-    }
+pub trait MidiOutputNode: Send {
+  fn process(&mut self, events: &[MidiEvent]);
 }

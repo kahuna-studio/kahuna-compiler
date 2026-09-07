@@ -619,7 +619,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "kahuna-macros"
+name = "kahuna-module"
+version = "0.1.0"
+dependencies = [
+ "kahuna-core",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
+name = "kahuna-patch"
 version = "0.1.0"
 dependencies = [
  "kahuna-core",
@@ -649,7 +659,8 @@ name = "kahuna-synth"
 version = "0.1.0"
 dependencies = [
  "kahuna-core",
- "kahuna-macros",
+ "kahuna-module",
+ "kahuna-patch",
  "kahuna-runtime",
  "kahuna-std",
 ]

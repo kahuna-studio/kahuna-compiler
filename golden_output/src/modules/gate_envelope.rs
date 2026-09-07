@@ -1,5 +1,5 @@
 use kahuna_core::{ModuleEnv, Unipolar};
-use kahuna_macros::kahuna_module;
+use kahuna_module::kahuna_module;
 
 #[kahuna_module]
 pub struct GateEnvelope {

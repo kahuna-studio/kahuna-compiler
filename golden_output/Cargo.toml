@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 kahuna-core = { path = "../kahuna-core" }
-kahuna-macros = { path = "../kahuna-macros" }
+kahuna-module = { path = "../kahuna-module" }
+kahuna-patch = { path = "../kahuna-patch" }
 kahuna-runtime = { path = "../kahuna-runtime" }
 kahuna-std = { path = "../kahuna-std" }
