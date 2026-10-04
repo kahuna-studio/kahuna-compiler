@@ -11,42 +11,43 @@ use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use salsa::{Accumulator, Setter, Storage};
 
+use kahuna_compiler::instrument_metadata::InstrumentMetadata;
+
 // ------------------- main -------------------
 
 fn main() -> Result<()> {
-    let package_path: PathBuf = std::env::args_os()
+    let instrument_path: PathBuf = std::env::args_os()
         .nth(1)
-        .ok_or_else(|| eyre!("Usage: ./kahuna-compiler /path/to/package.toml"))?
+        .ok_or_else(|| eyre!("Usage: ./kahuna-compiler /path/to/instrument.toml"))?
         .into();
 
-    let package_path = package_path.canonicalize()?;
+    let instrument_path = instrument_path.canonicalize()?;
 
-    if package_path.file_name() != Some(std::ffi::OsStr::new("package.toml")) {
+    if instrument_path.file_name() != Some(std::ffi::OsStr::new("instrument.toml")) {
         return Err(eyre!(
-            "Expected a file named 'package.toml', got: {}",
-            package_path.display()
+            "Expected a file named 'instrument.toml', got: {}",
+            instrument_path.display()
         ));
     }
 
-    let src_dir = package_path.parent().unwrap().join("").canonicalize()?;
-    let base_dir = package_path.parent().unwrap().canonicalize()?;
+    let base_dir = instrument_path.parent().unwrap().canonicalize()?;
 
     let (tx, rx) = mpsc::channel();
-    let mut db = KahunaCompilerDatabase::new(tx, base_dir);
+    let mut db = KahunaCompilerDatabase::new(tx, base_dir.clone());
 
     // Watch upfront
     {
         let mut watcher = db.file_watcher.lock().unwrap();
         watcher
             .watcher()
-            .watch(&package_path, RecursiveMode::NonRecursive)?;
+            .watch(&instrument_path, RecursiveMode::NonRecursive)?;
         watcher
             .watcher()
-            .watch(&src_dir, RecursiveMode::Recursive)?;
+            .watch(&base_dir, RecursiveMode::Recursive)?;
     }
 
-    // Ensure the package file exists as salsa input
-    let initial = db.input(PathBuf::from("package.toml"))?;
+    // Ensure the instrument file exists as salsa input
+    let initial = db.input(PathBuf::from("instrument.toml"))?;
 
     loop {
         let sum = compile_package(&db, initial);
@@ -54,7 +55,7 @@ fn main() -> Result<()> {
         let logs = compile_package::accumulated::<Log>(&db, initial);
 
         if diagnostics.is_empty() {
-            println!("Sum is: {sum}");
+            println!("✓ Compilation successful (Sum: {sum})");
         } else {
             for diagnostic in diagnostics {
                 println!("{}", diagnostic.0);
@@ -64,12 +65,6 @@ fn main() -> Result<()> {
         for log_message in logs {
             print!("{}\n", log_message.0);
         }
-
-        /*
-        for log in db.logs.lock().unwrap().drain(..) {
-            eprintln!("{log}");
-        }
-        */
 
         // Wait for fs events
         for event in rx.recv()?.unwrap() {
@@ -83,13 +78,13 @@ fn main() -> Result<()> {
                 Err(_) => continue,
             };
 
-            let relative_path = path.strip_prefix(&db.base_dir)?.to_path_buf();
+            let relative_path = path.strip_prefix(&base_dir)?.to_path_buf();
 
             let file = match db.files.get(&relative_path) {
                 Some(file) => *file,
                 None => {
-                    let file = File::new(&db, relative_path, contents.clone());
-                    db.files.insert(path, file);
+                    let file = File::new(&db, relative_path.clone(), contents.clone());
+                    db.files.insert(relative_path, file);
                     continue;
                 }
             };
@@ -199,53 +194,51 @@ struct ParsedFile<'db> {
     links: Vec<ParsedFile<'db>>,
 }
 
+/// Parse instrument metadata from the instrument.toml file
+#[salsa::tracked]
+fn parse_instrument_metadata(db: &dyn Db, manifest_file: File) -> InstrumentMetadata {
+    Log::info(
+        db,
+        format!(
+            "Parsing instrument metadata: {}",
+            manifest_file.path(db).display()
+        ),
+    );
+    
+    let contents = manifest_file.contents(db).clone();
+    match InstrumentMetadata::from_str(&contents) {
+        Ok(metadata) => {
+            Log::info(
+                db,
+                format!(
+                    "Loaded instrument '{}' by {} (version {})",
+                    metadata.name, metadata.vendor, metadata.version
+                ),
+            );
+            metadata
+        }
+        Err(e) => {
+            Diagnostic::push_error(db, manifest_file, e);
+            // Return a dummy value on error
+            InstrumentMetadata {
+                name: "error".to_string(),
+                vendor: "error".to_string(),
+                version: "0.0.0".to_string(),
+                targets: vec![],
+                unit_crates: Default::default(),
+            }
+        }
+    }
+}
+
 #[salsa::tracked]
 fn compile_package(db: &dyn Db, manifest_file: File) -> u32 {
     Log::info(db, format!("Compiling package: {}", manifest_file.path(db).display()));
-    let parsed = parse(db, manifest_file);
-    sum(db, parsed)
-}
-
-#[salsa::tracked]
-fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
-    Log::info(db, format!("Parsing file: {}", input.path(db).display()));
-    let mut lines = input.contents(db).lines();
-
-    let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
-        Some((Ok(num), _)) => num,
-        Some((Err(e), line)) => {
-            Diagnostic::push_error(
-                db,
-                input,
-                Report::new(e).wrap_err(format!(
-                    "First line ({line}) could not be parsed as an integer"
-                )),
-            );
-            0
-        }
-        None => {
-            Diagnostic::push_error(db, input, eyre!("File must contain an integer"));
-            0
-        }
-    };
-
-    let links = lines
-        .filter_map(|path| {
-            let relative_path = path.parse::<PathBuf>().ok()?;
-            let link_path = input.path(db).parent().unwrap().join(relative_path);
-            db.input(link_path).ok().map(|file| parse(db, file))
-        })
-        .collect();
-
-    ParsedFile::new(db, value, links)
-}
-
-#[salsa::tracked]
-fn sum<'db>(db: &'db dyn Db, input: ParsedFile<'db>) -> u32 {
-    input.value(db)
-        + input
-            .links(db)
-            .iter()
-            .map(|&file| sum(db, file))
-            .sum::<u32>()
+    
+    // Parse instrument metadata
+    let _metadata = parse_instrument_metadata(db, manifest_file);
+    
+    // For now, just return 1 to indicate success
+    // Later steps will use this metadata for code generation
+    1
 }
