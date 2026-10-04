@@ -3,15 +3,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use eyre::{Result, eyre};
 
-/// Represents a build target for the instrument (VST3, CLAP, standalone, etc.)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "lowercase")]
-pub enum BuildTarget {
-    Vst3,
-    Clap,
-    Standalone,
-}
-
 /// Parsed instrument.toml metadata
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InstrumentMetadata {
@@ -21,8 +12,6 @@ pub struct InstrumentMetadata {
     pub vendor: String,
     /// Version string (semver)
     pub version: String,
-    /// Build targets this instrument supports
-    pub targets: Vec<BuildTarget>,
     /// Optional: external unit crates to use (beyond kahuna-std and units/)
     #[serde(default)]
     pub unit_crates: BTreeMap<String, String>,
@@ -79,10 +68,6 @@ impl InstrumentMetadata {
             return Err(eyre!("Version cannot be empty"));
         }
 
-        if self.targets.is_empty() {
-            return Err(eyre!("At least one build target must be specified"));
-        }
-
         Ok(())
     }
 }
@@ -97,13 +82,11 @@ mod tests {
 name = "my-synth"
 vendor = "My Company"
 version = "0.1.0"
-targets = ["vst3", "standalone"]
 "#;
         let metadata = InstrumentMetadata::from_str(toml_str).unwrap();
         assert_eq!(metadata.name, "my-synth");
         assert_eq!(metadata.vendor, "My Company");
         assert_eq!(metadata.version, "0.1.0");
-        assert_eq!(metadata.targets.len(), 2);
     }
 
     #[test]
@@ -112,7 +95,6 @@ targets = ["vst3", "standalone"]
 name = "my-synth"
 vendor = "My Company"
 version = "0.1.0"
-targets = ["vst3"]
 
 [unit_crates]
 my_effects = "../my_effects"
@@ -128,7 +110,6 @@ my_effects = "../my_effects"
 name = ""
 vendor = "My Company"
 version = "0.1.0"
-targets = ["vst3"]
 "#;
         let result = InstrumentMetadata::from_str(toml_str);
         assert!(result.is_err());
@@ -140,19 +121,6 @@ targets = ["vst3"]
 name = "9invalid"
 vendor = "My Company"
 version = "0.1.0"
-targets = ["vst3"]
-"#;
-        let result = InstrumentMetadata::from_str(toml_str);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_empty_targets() {
-        let toml_str = r#"
-name = "my-synth"
-vendor = "My Company"
-version = "0.1.0"
-targets = []
 "#;
         let result = InstrumentMetadata::from_str(toml_str);
         assert!(result.is_err());

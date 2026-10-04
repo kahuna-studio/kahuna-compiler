@@ -224,7 +224,6 @@ fn parse_instrument_metadata(db: &dyn Db, manifest_file: File) -> InstrumentMeta
                 name: "error".to_string(),
                 vendor: "error".to_string(),
                 version: "0.0.0".to_string(),
-                targets: vec![],
                 unit_crates: Default::default(),
             }
         }
