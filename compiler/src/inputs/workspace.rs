@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-const INSTRUMENT_FILE: &str = "instrument.toml";
+pub const INSTRUMENT_FILE: &str = "instrument.toml";
 const PATCH_FILE: &str = "patch.json";
 
 /// A file below the instrument directory. `contents == None` means the file does not exist.
