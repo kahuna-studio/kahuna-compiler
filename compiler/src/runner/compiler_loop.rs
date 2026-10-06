@@ -4,7 +4,7 @@ use eyre::Result;
 use notify_debouncer_mini::DebounceEventResult;
 use crate::database::CompilerDatabase;
 use crate::inputs::{Workspace, reload_file, reload_all};
-use crate::compiler::compile_package;
+use crate::database::compile_package;
 use crate::diagnostics::{Diagnostic, Log};
 
 pub fn run(

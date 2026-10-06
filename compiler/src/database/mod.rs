@@ -6,11 +6,16 @@ use crate::ast::basics::File as AstFile;
 use crate::compilation_steps::ast_construction::ast_mapper::map_to_ast;
 use crate::compilation_steps::source_file_parser::source_file_parser::{parse_source_file};
 use crate::compilation_steps::source_file_preprocessor::source_file_preprocessor::add_indentation_tags;
+use crate::compilation_steps::{instrument_file_parser, patch_file_parser};
 use salsa::Storage;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use crate::compilation_steps::patch_code_parser::graph::PatchGraph;
+use crate::compilation_steps::patch_code_parser::graph::PatchGraph as CodeParserPatchGraph;
+use crate::compilation_steps::patch_file_parser::patch_graph::PatchGraph;
 use crate::compilation_steps::patch_code_parser::parse_patch_code;
+use crate::inputs::{File, Workspace};
+use crate::diagnostics::{Diagnostic, Log};
+use crate::compilation_steps::instrument_file_parser::instrument_metadata::InstrumentMetadata;
 
 thread_local! {
     static LOG: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
@@ -65,12 +70,84 @@ pub fn get_source_file_ast(db: &dyn salsa::Database, file: SourceFile) -> AstFil
 }
 
 #[salsa::tracked]
-pub fn get_patch_graph(db: &dyn salsa::Database, file: SourceFile) -> PatchGraph {
+pub fn get_patch_graph(db: &dyn salsa::Database, file: SourceFile) -> CodeParserPatchGraph {
   push_log("patch_file_graph");
   let contents = file.contents(db);
   let patch_graph = parse_patch_code(&contents).expect("parse failed");
 
   patch_graph
+}
+
+/// Entry point of the compilation. Returns the number of patch nodes for now (placeholder).
+#[salsa::tracked]
+pub fn compile_package(db: &dyn salsa::Database, workspace: Workspace) -> usize {
+    let instrument_file = *workspace.instrument(db);
+    let patch_file = *workspace.patch(db);
+
+    Log::info(
+        db,
+        format!("Compiling package: {}", instrument_file.path(db).display()),
+    );
+
+    let _metadata = parse_instrument_metadata_tracked(db, instrument_file);
+
+    match parse_patch_graph_tracked(db, patch_file) {
+        Some(graph) => graph.nodes.len(),
+        None => 0,
+    }
+}
+
+/// Salsa-tracked wrapper for instrument.toml parsing. `None` means a diagnostic was emitted.
+#[salsa::tracked]
+pub fn parse_instrument_metadata_tracked(db: &dyn salsa::Database, file: File) -> Option<InstrumentMetadata> {
+    let Some(contents) = file.contents(db).as_deref() else {
+        Diagnostic::push_error(db, file, eyre::eyre!("File not found"));
+        return None;
+    };
+
+    match instrument_file_parser::parse_instrument_metadata(contents, file) {
+        Ok(metadata) => {
+            Log::info(
+                db,
+                format!(
+                    "Loaded instrument '{}' by {} (version {})",
+                    metadata.name, metadata.vendor, metadata.version
+                ),
+            );
+            Some(metadata)
+        }
+        Err(error) => {
+            Diagnostic::push_error(db, file, error);
+            None
+        }
+    }
+}
+
+/// Salsa-tracked wrapper for patch.json parsing. A missing file is not an error: the instrument may have no patch yet.
+#[salsa::tracked]
+pub fn parse_patch_graph_tracked(db: &dyn salsa::Database, file: File) -> Option<PatchGraph> {
+    let Some(contents) = file.contents(db).as_deref() else {
+        Log::info(db, "No patch.json found; skipping patch parsing".to_string());
+        return None;
+    };
+
+    match patch_file_parser::parse_patch_graph(contents, file) {
+        Ok(graph) => {
+            Log::info(
+                db,
+                format!(
+                    "Loaded patch graph with {} nodes and {} edges",
+                    graph.nodes.len(),
+                    graph.edges.len()
+                ),
+            );
+            Some(graph)
+        }
+        Err(error) => {
+            Diagnostic::push_error(db, file, error);
+            None
+        }
+    }
 }
 
 

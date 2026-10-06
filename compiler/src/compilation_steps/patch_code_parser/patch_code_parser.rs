@@ -3,6 +3,9 @@
 //
 // Parses the Kahuna patch text format into a PatchGraph.
 //
+// At this moment superseded by the patch_file_parser - so patches are defined
+// in JSON for now.
+//
 // Connection syntax:
 //   source_node.port -> target_port[.sub_index].target_node
 //   source_node.port -> converter -> target_port[.sub_index].target_node
