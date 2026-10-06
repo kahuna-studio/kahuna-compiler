@@ -6,3 +6,4 @@ pub mod source_file_preprocessor;
 pub mod patch_code_parser;
 pub mod patch_file_parser;
 pub mod instrument_file_parser;
+pub mod patch_code_generator;
