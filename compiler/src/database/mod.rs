@@ -1,3 +1,7 @@
+pub mod compiler_db;
+
+pub use compiler_db::CompilerDatabase;
+
 use crate::ast::basics::File as AstFile;
 use crate::compilation_steps::ast_construction::ast_mapper::map_to_ast;
 use crate::compilation_steps::source_file_parser::source_file_parser::{parse_source_file};

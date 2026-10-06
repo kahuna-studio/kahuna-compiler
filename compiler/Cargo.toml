@@ -3,8 +3,11 @@ name = "kahuna-compiler"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "kahuna-compiler"
+path = "src/main.rs"
+
 [dependencies]
-dashmap = "7.0.0-rc2"
 eyre = "0.6.14"
 notify-debouncer-mini = "0.7.0"
 pest = "2.9.0"
