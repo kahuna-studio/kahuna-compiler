@@ -44,7 +44,7 @@ impl AdsrEnvelope {
     }
   }
 
-  pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
+  pub fn process<'a>(&mut self, inputs: &AdsrEnvelopeInputs<'a>, outputs: &mut AdsrEnvelopeOutputs<'a>) {
 
     let attack_step = 1.0 / (inputs.attack * self.sample_rate).max(1.0);
     let decay_step = 1.0 / (inputs.decay * self.sample_rate).max(1.0);

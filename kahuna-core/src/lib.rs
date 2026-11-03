@@ -152,7 +152,11 @@ pub struct ModuleEnv {
     pub max_buffer_size: usize,
 }
 
+/// `Inputs`/`Outputs` let generated patch code reach a module's I/O structs through the
+/// module type alone, e.g. `<SineOsc as KahunaModule>::Inputs::new(..)`.
 pub trait KahunaModule: Sized {
+    type Inputs<'a>;
+    type Outputs<'a>;
     const PORTS: &'static [PortSpecification];
     fn new(env: &ModuleEnv) -> Self;
 }

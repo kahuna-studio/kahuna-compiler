@@ -1,5 +1,5 @@
-use crate::modules::adsr_envelope::{self, AdsrEnvelope};
-use crate::modules::sine_osc::{self, SineOsc};
+use crate::modules::adsr_envelope::AdsrEnvelope;
+use crate::modules::sine_osc::SineOsc;
 use kahuna_core::io_nodes::{AudioOutputNode, IoNodeFactory, MidiInputNode};
 use kahuna_core::midi::MidiEvent;
 use kahuna_core::midi::polyphony::poly_buffer::PolyBuffer;
@@ -109,10 +109,10 @@ impl KahunaPatch for Patch {
             );
 
             self.poly_0__sine_osc_0[voice].process(
-                &sine_osc::Inputs::new(
+                &<SineOsc as KahunaModule>::Inputs::new(
                     self.state.poly_0__midi_events_to_frequency_parameter_0__out[voice],
                 ),
-                &mut sine_osc::Outputs::new(
+                &mut <SineOsc as KahunaModule>::Outputs::new(
                     &mut self.state.poly_0__sine_osc_0__out.voice_mut(voice)[..frames],
                 ),
             );
@@ -123,14 +123,14 @@ impl KahunaPatch for Patch {
             );
 
             self.poly_0__adsr_envelope_0[voice].process(
-                &adsr_envelope::Inputs::new(
+                &<AdsrEnvelope as KahunaModule>::Inputs::new(
                     self.state.poly_0__midi_events_to_gate_parameter_0__out[voice],
                     None,
                     None,
                     None,
                     None,
                 ),
-                &mut adsr_envelope::Outputs::new(
+                &mut <AdsrEnvelope as KahunaModule>::Outputs::new(
                     &mut self
                         .state
                         .poly_0__adsr_envelope_0__envelope

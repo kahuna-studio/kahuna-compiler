@@ -344,7 +344,7 @@ fn emit_unit_call(node: &AnalyzedNode, spec: &UnitSpec) -> Result<TokenStream> {
   let instance = instance_expression(node);
   let arguments = match &spec.call_style {
     CallStyle::Converter => converter_arguments(node)?,
-    CallStyle::Module { io_module_path } => module_arguments(node, io_module_path)?,
+    CallStyle::Module => module_arguments(node, &spec.type_path)?,
     CallStyle::VariadicSlice => slice_arguments(node)?,
   };
 
@@ -357,8 +357,8 @@ fn converter_arguments(node: &AnalyzedNode) -> Result<TokenStream> {
   Ok(quote!(#input, #output))
 }
 
-fn module_arguments(node: &AnalyzedNode, io_module_path: &str) -> Result<TokenStream> {
-  let io_module = parse_path(io_module_path)?;
+fn module_arguments(node: &AnalyzedNode, type_path: &str) -> Result<TokenStream> {
+  let unit_type = parse_path(type_path)?;
   let inputs = node
     .inputs
     .iter()
@@ -366,8 +366,8 @@ fn module_arguments(node: &AnalyzedNode, io_module_path: &str) -> Result<TokenSt
   let outputs = node.outputs.iter().map(write_expression);
 
   Ok(quote! {
-        &#io_module::Inputs::new(#(#inputs),*),
-        &mut #io_module::Outputs::new(#(#outputs),*)
+        &<#unit_type as kahuna_core::KahunaModule>::Inputs::new(#(#inputs),*),
+        &mut <#unit_type as kahuna_core::KahunaModule>::Outputs::new(#(#outputs),*)
     })
 }
 
@@ -530,10 +530,25 @@ mod tests {
     let graph: PatchGraph = SINE_PATCH.parse().unwrap();
     let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
 
-    assert!(source.contains("for voice in 0..self.poly_0_voices"));
-    assert!(source.contains("self.poly_0__mult_0[voice].process"));
-    assert!(source.contains("self.state.merge_0__out[..frames].fill(0.0)"));
-    assert!(source.contains("self.audio_out_0.process"));
+    assert!(contains_code(&source, "for voice in 0..self.poly_0_voices"));
+    assert!(contains_code(&source, "self.poly_0__mult_0[voice].process"));
+    assert!(contains_code(&source, "self.state.merge_0__out[..frames].fill(0.0)"));
+    assert!(contains_code(&source, "self.audio_out_0.process"));
+  }
+
+  #[test]
+  fn reaches_module_io_through_the_module_trait() {
+    let graph: PatchGraph = SINE_PATCH.parse().unwrap();
+    let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
+
+    assert!(contains_code(&source, "<crate::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Inputs::new("));
+    assert!(contains_code(&source, "<crate::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Outputs::new("));
+  }
+
+  /// prettyplease wraps long lines, so compare with all whitespace removed.
+  fn contains_code(source: &str, snippet: &str) -> bool {
+    let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    strip(source).contains(&strip(snippet))
   }
 
   #[test]

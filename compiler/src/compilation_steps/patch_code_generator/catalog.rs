@@ -31,8 +31,8 @@ pub struct PortSpec {
 pub enum CallStyle {
   /// `unit.process(&input, &mut output)`
   Converter,
-  /// `unit.process(&io::Inputs::new(..), &mut io::Outputs::new(..))`
-  Module { io_module_path: String },
+  /// `unit.process(&<Unit as KahunaModule>::Inputs::new(..), &mut <Unit as KahunaModule>::Outputs::new(..))`
+  Module,
   /// `unit.process(&[&input_0, &input_1, ..], &mut output)`
   VariadicSlice,
 }
@@ -109,9 +109,7 @@ pub fn builtin_catalog() -> StaticCatalog {
       "self::SineOsc".to_string(),
       UnitSpec {
         type_path: "crate::modules::sine_osc::SineOsc".to_string(),
-        call_style: CallStyle::Module {
-          io_module_path: "crate::modules::sine_osc".to_string(),
-        },
+        call_style: CallStyle::Module,
         inputs: vec![PortSpec::required("frequency", ValueKind::Float)],
         outputs: vec![PortSpec::required("out", ValueKind::Signal)],
       },
@@ -120,9 +118,7 @@ pub fn builtin_catalog() -> StaticCatalog {
       "self::AdsrEnvelope".to_string(),
       UnitSpec {
         type_path: "crate::modules::adsr_envelope::AdsrEnvelope".to_string(),
-        call_style: CallStyle::Module {
-          io_module_path: "crate::modules::adsr_envelope".to_string(),
-        },
+        call_style: CallStyle::Module,
         inputs: vec![
           PortSpec::required("gate", ValueKind::Bool),
           PortSpec::optional("attack", ValueKind::Float),

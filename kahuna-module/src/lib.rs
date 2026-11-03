@@ -1,6 +1,6 @@
 use kahuna_core::{Rate, StreamKind};
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::parse::ParseStream;
 use syn::{Data, DeriveInput, Field, Fields, GenericArgument, Ident, PathArguments, Type};
 
@@ -91,33 +91,39 @@ fn expand(item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStrea
     let output_constructor_initializers = generated_output_ports.iter().map(|port| &port.constructor_initializer);
     let output_specifications = generated_output_ports.iter().map(|port| &port.specification);
 
+    // prefixed with the struct name so several modules can share one Rust module
+    let inputs_name = format_ident!("{}Inputs", struct_name);
+    let outputs_name = format_ident!("{}Outputs", struct_name);
+
     Ok(quote! {
         #(#struct_attributes)*
         #visibility struct #struct_name {
             #(#state_fields),*
         }
 
-        pub struct Inputs<'a> {
+        pub struct #inputs_name<'a> {
             #(#input_field_declarations)*
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
-        impl<'a> Inputs<'a> {
+        impl<'a> #inputs_name<'a> {
             pub fn new(#(#input_constructor_parameters)*) -> Self {
                 Self { #(#input_constructor_initializers)* _phantom: ::std::marker::PhantomData }
             }
         }
 
-        pub struct Outputs<'a> {
+        pub struct #outputs_name<'a> {
             #(#output_field_declarations)*
             pub _phantom: ::std::marker::PhantomData<&'a ()>,
         }
-        impl<'a> Outputs<'a> {
+        impl<'a> #outputs_name<'a> {
             pub fn new(#(#output_constructor_parameters)*) -> Self {
                 Self { #(#output_constructor_initializers)* _phantom: ::std::marker::PhantomData }
             }
         }
 
         impl kahuna_core::KahunaModule for #struct_name {
+            type Inputs<'a> = #inputs_name<'a>;
+            type Outputs<'a> = #outputs_name<'a>;
             const PORTS: &'static [kahuna_core::PortSpecification] = &[
                 #(#input_specifications)*
                 #(#output_specifications)*

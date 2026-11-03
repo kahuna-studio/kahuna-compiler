@@ -21,7 +21,7 @@ impl SineOsc {
         }
     }
 
-    pub fn process<'a>(&mut self, inputs: &Inputs<'a>, outputs: &mut Outputs<'a>) {
+    pub fn process<'a>(&mut self, inputs: &SineOscInputs<'a>, outputs: &mut SineOscOutputs<'a>) {
 
         self.phase.process(inputs.frequency, outputs.out);
 
@@ -66,8 +66,8 @@ mod tests {
         let mut osc = SineOsc::new(&env);
 
         let mut buffer = [0.0f32; 64];
-        let inputs = Inputs::new(440.0);
-        let mut outputs = Outputs::new(&mut buffer);
+        let inputs = SineOscInputs::new(440.0);
+        let mut outputs = SineOscOutputs::new(&mut buffer);
 
         osc.process(&inputs, &mut outputs);
 
