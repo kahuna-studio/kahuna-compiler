@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "compiler",
+    "kahuna-compiler",
     "golden_output",
     "kahuna-core",
     "kahuna-module",
