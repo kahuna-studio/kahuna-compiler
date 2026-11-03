@@ -1,6 +1,6 @@
 pub mod oscillators {
     use kahuna_core::{Audio, Control};
-    use kahuna_module::kahuna_module;
+    use kahuna_unit::kahuna_module;
 
     #[kahuna_module]
     pub struct SineOsc {

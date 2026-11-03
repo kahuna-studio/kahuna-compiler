@@ -3,7 +3,7 @@ members = [
     "kahuna-compiler",
     "golden_output",
     "kahuna-core",
-    "kahuna-module",
+    "kahuna-unit",
     "kahuna-patch",
     "kahuna-runtime",
     "kahuna-std",

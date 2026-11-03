@@ -1,0 +1,47 @@
+{
+  "format_version": 1,
+  "units": [
+    {
+      "id": "midi-event-to-frequency-parameter",
+      "kind": "converter",
+      "rust_path": "mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "midi_events",
+          "stream_type": "event",
+          "value_type": "MidiEvent",
+          "required": false
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "midi-event-to-gate-parameter",
+      "kind": "converter",
+      "rust_path": "mapping::midi_event_to_gate_parameter::MidiEventToGateParameter",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "midi_events",
+          "stream_type": "event",
+          "value_type": "MidiEvent",
+          "required": false
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "bool"
+        }
+      ]
+    }
+  ]
+}

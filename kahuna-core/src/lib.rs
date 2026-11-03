@@ -6,7 +6,7 @@ pub mod patch;
 pub mod io_nodes;
 
 use std::any::TypeId;
-use crate::midi::MidiEvent;
+pub use crate::midi::MidiEvent;
 // ============================================================================
 // Core Reflection & Metadata Types
 // ============================================================================
@@ -160,6 +160,16 @@ pub trait KahunaModule: Sized {
     /// Identifies the unit within its crate, e.g. in patch files. Kebab-case; defaults to the
     /// struct name, can be pinned with `#[kahuna_module(id = "...")]` to survive renames.
     const ID: &'static str;
+    const PORTS: &'static [PortSpecification];
+    fn new(env: &ModuleEnv) -> Self;
+}
+
+/// A lightweight transform from one stream into another: exactly one input and one output.
+/// Its `process(input, output)` takes the two values directly, without Inputs/Outputs structs.
+pub trait KahunaConverter: Sized {
+    /// See [`KahunaModule::ID`].
+    const ID: &'static str;
+    /// The input first, then the output.
     const PORTS: &'static [PortSpecification];
     fn new(env: &ModuleEnv) -> Self;
 }

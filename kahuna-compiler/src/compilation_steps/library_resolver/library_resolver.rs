@@ -13,7 +13,7 @@ use serde_json::Value as Json;
 
 use crate::compilation_steps::instrument_file_parser::instrument_metadata::{InstrumentMetadata, SELF_LIBRARY};
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
-  LibraryManifest, PortDirection, PortEntry, StreamType, UnitEntry, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
+  LibraryManifest, PortDirection, PortEntry, StreamType, UnitEntry, UnitKind, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
 };
 use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, StaticCatalog, UnitSpec, ValueKind};
 
@@ -261,7 +261,10 @@ fn unit_spec(unit: &UnitEntry, extern_name: &str) -> Result<UnitSpec> {
 
   Ok(UnitSpec {
     type_path: format!("{extern_name}::{}", unit.rust_path),
-    call_style: CallStyle::Module,
+    call_style: match unit.kind {
+      UnitKind::Module => CallStyle::Module,
+      UnitKind::Converter => CallStyle::Converter,
+    },
     inputs: inputs.into_iter().map(port_spec).collect::<Result<_>>()?,
     outputs: outputs.into_iter().map(port_spec).collect::<Result<_>>()?,
   })
@@ -297,7 +300,7 @@ mod tests {
   }
 
   fn output_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("kahuna-unit-resolver-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kahuna-library-resolver-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     dir
   }
@@ -317,6 +320,10 @@ mod tests {
     assert_eq!(envelope.inputs[0].arity, Arity::Required);
     assert_eq!(envelope.inputs[1].arity, Arity::Optional);
     assert_eq!(envelope.outputs[0].kind, ValueKind::Signal);
+
+    let gate = catalog.find("kahuna-std/midi-event-to-gate-parameter").expect("converter");
+    assert_eq!(gate.type_path, "kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter");
+    assert!(matches!(gate.call_style, CallStyle::Converter));
 
     assert!(catalog.find("envelopes/gate-follower").is_none());
     assert_eq!(resolved.unsupported_units.len(), 1);

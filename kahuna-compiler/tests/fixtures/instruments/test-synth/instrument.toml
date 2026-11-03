@@ -4,3 +4,4 @@ version = "0.1.0"
 
 [libraries]
 envelopes = { path = "../../libraries/envelopes" }
+kahuna-std = { path = "../../../../../kahuna-std" }

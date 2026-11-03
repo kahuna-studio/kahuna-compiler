@@ -1,13 +1,13 @@
 //! Builds a unit library's manifest by reading its source with `syn`. Nothing is compiled.
 //!
 //! Starting at the library root, the scanner follows `mod` declarations the same way rustc
-//! does and collects every struct marked `#[kahuna_module]`.
+//! does and collects every struct marked `#[kahuna_module]` or `#[kahuna_converter]`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{bail, eyre, Result, WrapErr};
-use kahuna_unit_syntax::{parse_module, Direction, LiteralValue, PortConfiguration, UnitAttributes};
+use kahuna_unit_syntax::{parse_unit, Direction, LiteralValue, PortConfiguration, UnitAttributes, UnitKind as DeclaredKind};
 use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::{Attribute, DeriveInput, Item, ItemStruct, Meta, Type, Visibility};
@@ -15,8 +15,6 @@ use syn::{Attribute, DeriveInput, Item, ItemStruct, Meta, Type, Visibility};
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
   PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, LibraryManifest, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
 };
-
-const MODULE_MARKER: &str = "kahuna_module";
 
 /// Scans the library in `crate_dir` and writes its manifest next to its Cargo.toml.
 pub fn write_library_manifest(crate_dir: &Path) -> Result<PathBuf> {
@@ -109,8 +107,8 @@ impl Scanner {
           }
         }
         Item::Struct(item_struct) => {
-          if let Some(marker) = find_marker(&item_struct.attrs) {
-            let unit = read_module(item_struct, marker, file, module_path, public)?;
+          if let Some((marker, kind)) = find_marker(&item_struct.attrs) {
+            let unit = read_unit(item_struct, marker, kind, file, module_path, public)?;
             self.units.push(unit);
           }
         }
@@ -142,9 +140,10 @@ fn module_file(module: &syn::ItemMod, file: &Path, children_dir: &Path, name: &s
     })
 }
 
-fn read_module(
+fn read_unit(
   item_struct: &ItemStruct,
   marker: &Attribute,
+  kind: DeclaredKind,
   file: &Path,
   module_path: &[String],
   public: bool,
@@ -161,17 +160,23 @@ fn read_module(
   let attributes = match &marker.meta {
     Meta::Path(_) => UnitAttributes::default(),
     Meta::List(list) => UnitAttributes::parse(list.tokens.clone()).map_err(|error| located(file, error))?,
-    Meta::NameValue(_) => bail!("{}: expected `#[{MODULE_MARKER}]` or `#[{MODULE_MARKER}(...)]`", file.display()),
+    Meta::NameValue(_) => {
+      let marker = kind.marker();
+      bail!("{}: expected `#[{marker}]` or `#[{marker}(...)]`", file.display())
+    }
   };
 
   let input = DeriveInput::from(item_struct.clone());
-  let module = parse_module(&input, &attributes).map_err(|error| located(file, error))?;
+  let unit = parse_unit(kind, &input, &attributes).map_err(|error| located(file, error))?;
 
   Ok(UnitEntry {
-    id: module.id,
-    kind: UnitKind::Module,
+    id: unit.id,
+    kind: match kind {
+      DeclaredKind::Module => UnitKind::Module,
+      DeclaredKind::Converter => UnitKind::Converter,
+    },
     rust_path,
-    ports: module.ports.iter().map(port_entry).collect(),
+    ports: unit.ports.iter().map(port_entry).collect(),
   })
 }
 
@@ -218,7 +223,7 @@ fn check_unique_ids(units: &[UnitEntry]) -> Result<()> {
   for (index, unit) in units.iter().enumerate() {
     if let Some(duplicate) = units[index + 1..].iter().find(|other| other.id == unit.id) {
       bail!(
-        "units `{}` and `{}` both have the id `{}`; set a different one with #[{MODULE_MARKER}(id = \"...\")]",
+        "units `{}` and `{}` both have the id `{}`; set a different one with `id = \"...\"` in the unit's attribute",
         unit.rust_path,
         duplicate.rust_path,
         unit.id
@@ -228,13 +233,10 @@ fn check_unique_ids(units: &[UnitEntry]) -> Result<()> {
   Ok(())
 }
 
-fn find_marker(attributes: &[Attribute]) -> Option<&Attribute> {
-  attributes.iter().find(|attribute| {
-    attribute
-      .path()
-      .segments
-      .last()
-      .is_some_and(|segment| segment.ident == MODULE_MARKER)
+fn find_marker(attributes: &[Attribute]) -> Option<(&Attribute, DeclaredKind)> {
+  attributes.iter().find_map(|attribute| {
+    let segment = attribute.path().segments.last()?;
+    DeclaredKind::from_marker(&segment.ident.to_string()).map(|kind| (attribute, kind))
   })
 }
 
@@ -282,6 +284,37 @@ mod tests {
     let manifest = generate_library_manifest(&crate_dir).unwrap();
 
     assert_eq!(to_json(&manifest).unwrap(), expected);
+  }
+
+  #[test]
+  fn matches_the_committed_manifest_of_kahuna_std() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../kahuna-std");
+    let expected = fs::read_to_string(crate_dir.join(LIBRARY_MANIFEST_FILE)).unwrap();
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+
+    assert_eq!(
+      to_json(&manifest).unwrap(),
+      expected,
+      "kahuna-std/{LIBRARY_MANIFEST_FILE} is out of date; regenerate it with `kahuna-compiler manifest kahuna-std`"
+    );
+  }
+
+  #[test]
+  fn reads_converters() {
+    let crate_dir = temporary_crate(
+      "converter",
+      &[(
+        "src/lib.rs",
+        "#[kahuna_converter] pub struct ToGate { #[input] midi_events: Midi, #[output] out: Parameter<bool> }",
+      )],
+    );
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+
+    assert_eq!(manifest.units[0].kind, UnitKind::Converter);
+    assert_eq!(manifest.units[0].id, "to-gate");
+    assert_eq!(manifest.units[0].ports.len(), 2);
   }
 
   #[test]

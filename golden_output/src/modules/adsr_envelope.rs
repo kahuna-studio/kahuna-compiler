@@ -1,5 +1,5 @@
 use kahuna_core::{ModuleEnv, Unipolar};
-use kahuna_module::kahuna_module;
+use kahuna_unit::kahuna_module;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Stage {

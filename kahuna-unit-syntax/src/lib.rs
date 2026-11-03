@@ -1,6 +1,6 @@
-//! Parses unit declarations (`#[kahuna_module]` structs) from Rust syntax.
+//! Parses unit declarations (`#[kahuna_module]` and `#[kahuna_converter]` structs) from Rust syntax.
 //!
-//! Shared by the `kahuna-module` macro, which generates code from it, and the compiler's
+//! Shared by the `kahuna-unit` macros, which generate code from it, and the compiler's
 //! manifest generator, which reads unit libraries without compiling them. Keeping one parser
 //! guarantees that both always agree on a unit's id and ports.
 
@@ -56,7 +56,7 @@ pub enum LiteralValue {
     Float(f64),
 }
 
-/// The arguments of `#[kahuna_module(...)]`.
+/// The arguments of `#[kahuna_module(...)]` and `#[kahuna_converter(...)]`.
 #[derive(Default)]
 pub struct UnitAttributes {
     pub id: Option<LitStr>,
@@ -85,18 +85,47 @@ impl UnitAttributes {
     }
 }
 
-pub struct ModuleDeclaration<'a> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitKind {
+    Module,
+    Converter,
+}
+
+impl UnitKind {
+    /// The attribute that marks a struct as this kind of unit.
+    pub fn marker(self) -> &'static str {
+        match self {
+            UnitKind::Module => "kahuna_module",
+            UnitKind::Converter => "kahuna_converter",
+        }
+    }
+
+    pub fn from_marker(marker: &str) -> Option<Self> {
+        [UnitKind::Module, UnitKind::Converter].into_iter().find(|kind| kind.marker() == marker)
+    }
+}
+
+pub struct UnitDeclaration<'a> {
+    pub kind: UnitKind,
     pub id: String,
     pub state_fields: Vec<&'a Field>,
+    /// In declaration order. A converter has exactly one input and one output.
     pub ports: Vec<PortConfiguration>,
 }
 
-pub fn parse_module<'a>(input: &'a DeriveInput, attributes: &UnitAttributes) -> syn::Result<ModuleDeclaration<'a>> {
+impl UnitDeclaration<'_> {
+    pub fn ports(&self, direction: Direction) -> impl Iterator<Item = &PortConfiguration> {
+        self.ports.iter().filter(move |port| port.direction == direction)
+    }
+}
+
+pub fn parse_unit<'a>(kind: UnitKind, input: &'a DeriveInput, attributes: &UnitAttributes) -> syn::Result<UnitDeclaration<'a>> {
+    let marker = kind.marker();
     let Data::Struct(data) = &input.data else {
-        return Err(syn::Error::new_spanned(input, "#[kahuna_module] only supports structs"));
+        return Err(syn::Error::new_spanned(input, format!("#[{marker}] only supports structs")));
     };
     let Fields::Named(fields) = &data.fields else {
-        return Err(syn::Error::new_spanned(input, "#[kahuna_module] requires named fields"));
+        return Err(syn::Error::new_spanned(input, format!("#[{marker}] requires named fields")));
     };
 
     let mut state_fields = Vec::new();
@@ -108,12 +137,32 @@ pub fn parse_module<'a>(input: &'a DeriveInput, attributes: &UnitAttributes) -> 
         }
     }
 
+    if kind == UnitKind::Converter {
+        validate_converter_ports(input, &ports)?;
+    }
+
     let id = match &attributes.id {
         Some(id) => id.value(),
         None => default_unit_id(&input.ident),
     };
 
-    Ok(ModuleDeclaration { id, state_fields, ports })
+    Ok(UnitDeclaration { kind, id, state_fields, ports })
+}
+
+/// A converter transforms one stream into another: exactly one input and one output, and the input
+/// has no default, since a converter without input has nothing to convert.
+fn validate_converter_ports(input: &DeriveInput, ports: &[PortConfiguration]) -> syn::Result<()> {
+    let count = |direction| ports.iter().filter(|port| port.direction == direction).count();
+    if count(Direction::Input) != 1 || count(Direction::Output) != 1 {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "#[kahuna_converter] needs exactly one #[input] and one #[output] field; use #[kahuna_module] for more",
+        ));
+    }
+    if let Some(port) = ports.iter().find(|port| port.default_value.is_some()) {
+        return Err(syn::Error::new_spanned(&port.identifier, "converter inputs cannot have a `default`"));
+    }
+    Ok(())
 }
 
 /// The id a unit gets when none is set explicitly: its struct name in kebab-case.
@@ -293,7 +342,7 @@ mod tests {
     #[test]
     fn default_id_is_kebab_case_and_keeps_acronyms_together() {
         let input = parse_struct("struct ADSREnvelope {}");
-        let module = parse_module(&input, &UnitAttributes::default()).unwrap();
+        let module = parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).unwrap();
         assert_eq!(module.id, "adsr-envelope");
     }
 
@@ -301,7 +350,7 @@ mod tests {
     fn explicit_id_wins() {
         let input = parse_struct("struct SineOsc {}");
         let attributes = UnitAttributes::parse("id = \"sine\"".parse().unwrap()).unwrap();
-        let module = parse_module(&input, &attributes).unwrap();
+        let module = parse_unit(UnitKind::Module, &input, &attributes).unwrap();
         assert_eq!(module.id, "sine");
     }
 
@@ -318,14 +367,31 @@ mod tests {
         let input = parse_struct(
             "struct Unit { #[input(default = -0.5)] a: Parameter<f32>, #[input(default = true)] b: Parameter<bool> }",
         );
-        let module = parse_module(&input, &UnitAttributes::default()).unwrap();
+        let module = parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).unwrap();
         let defaults: Vec<_> = module.ports.iter().map(|port| port.default_value.as_ref().unwrap().literal).collect();
         assert_eq!(defaults, [LiteralValue::Float(-0.5), LiteralValue::Bool(true)]);
     }
 
     #[test]
+    fn converter_has_exactly_one_input_and_one_output() {
+        let valid = parse_struct("struct Conv { state: u8, #[input] midi_events: Midi, #[output] out: Parameter<f32> }");
+        let converter = parse_unit(UnitKind::Converter, &valid, &UnitAttributes::default()).unwrap();
+        assert_eq!(converter.id, "conv");
+        assert_eq!(converter.state_fields.len(), 1);
+
+        for invalid in [
+            "struct Conv { #[output] out: Parameter<f32> }",
+            "struct Conv { #[input] a: Midi, #[input] b: Midi, #[output] out: Parameter<f32> }",
+            "struct Conv { #[input(default = 1.0)] a: Parameter<f32>, #[output] out: Parameter<f32> }",
+        ] {
+            let input = parse_struct(invalid);
+            assert!(parse_unit(UnitKind::Converter, &input, &UnitAttributes::default()).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn rejects_non_literal_defaults() {
         let input = parse_struct("struct Unit { #[input(default = SOME_CONST)] a: Parameter<f32> }");
-        assert!(parse_module(&input, &UnitAttributes::default()).is_err());
+        assert!(parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).is_err());
     }
 }

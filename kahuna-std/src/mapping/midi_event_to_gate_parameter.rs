@@ -1,19 +1,27 @@
 use kahuna_core::midi::MidiEvent;
 use kahuna_core::ModuleEnv;
+use kahuna_unit::kahuna_converter;
 
+#[kahuna_converter]
 pub struct MidiEventToGateParameter {
     active_notes: Vec<u8>,
+
+    #[input]
+    midi_events: Midi,
+
+    #[output]
+    out: Parameter<bool>,
 }
 
 impl MidiEventToGateParameter {
-    pub fn new(_module_env: &ModuleEnv) -> Self {
+    pub fn init(_module_env: &ModuleEnv) -> Self {
         Self {
             active_notes: Vec::new(),
         }
     }
 
-    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut bool) {
-        for event in midi_in {
+    pub fn process(&mut self, midi_events: &[MidiEvent], out: &mut bool) {
+        for event in midi_events {
             match event {
                 MidiEvent::NoteOn { note, velocity } if *velocity > 0 => {
                     if !self.active_notes.contains(note) {
@@ -33,6 +41,7 @@ impl MidiEventToGateParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kahuna_core::KahunaConverter;
 
     fn make() -> (MidiEventToGateParameter, bool) {
         (MidiEventToGateParameter::new(&ModuleEnv { sample_rate: 48000, max_buffer_size: 256 }), false)

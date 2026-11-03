@@ -1,21 +1,29 @@
 use kahuna_core::midi::MidiEvent;
 use kahuna_core::ModuleEnv;
+use kahuna_unit::kahuna_converter;
 
+#[kahuna_converter]
 pub struct MidiEventToFrequencyParameter {
     active_notes: Vec<u8>,
     last_frequency: f32,
+
+    #[input]
+    midi_events: Midi,
+
+    #[output]
+    out: Parameter<f32>,
 }
 
 impl MidiEventToFrequencyParameter {
-    pub fn new(_module_env: &ModuleEnv) -> Self {
+    pub fn init(_module_env: &ModuleEnv) -> Self {
         Self {
             active_notes: Vec::new(),
             last_frequency: 440.0,
         }
     }
 
-    pub fn process(&mut self, midi_in: &[MidiEvent], out: &mut f32) {
-        for event in midi_in {
+    pub fn process(&mut self, midi_events: &[MidiEvent], out: &mut f32) {
+        for event in midi_events {
             match event {
                 MidiEvent::NoteOn { note, velocity } if *velocity > 0 => {
                     if !self.active_notes.contains(note) {
@@ -46,6 +54,7 @@ fn midi_note_to_frequency(note: u8) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kahuna_core::KahunaConverter;
 
     fn make() -> (MidiEventToFrequencyParameter, f32) {
         (MidiEventToFrequencyParameter::new(&ModuleEnv { sample_rate: 48000, max_buffer_size: 256 }), 440.0)

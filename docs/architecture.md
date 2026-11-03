@@ -126,7 +126,7 @@ DAW's buffer callback or by `cpal` directly — that's decided entirely in `{ins
 | Crate                 | Role                                                                  |
 |------------------------|-----------------------------------------------------------------------|
 | `kahuna-core`         | Module, port, and patch abstractions                                  |
-| `kahuna-module`       | `#[kahuna_module]` macro for authoring units                          |
+| `kahuna-unit`         | `#[kahuna_module]` and `#[kahuna_converter]` macros for authoring units |
 | `kahuna-unit-syntax`  | Parser for unit declarations, shared by the macro and the compiler    |
 | `kahuna-std`          | Ready-made units, importable like any other library                   |
 | `kahuna-plugin`       | Bridges `{instrument}` to `nice-plug`                                 |

@@ -6,4 +6,4 @@ edition = "2024"
 
 [dependencies]
 kahuna-core = { path = "../../../../../kahuna-core" }
-kahuna-module = { path = "../../../../../kahuna-module" }
+kahuna-unit = { path = "../../../../../kahuna-unit" }

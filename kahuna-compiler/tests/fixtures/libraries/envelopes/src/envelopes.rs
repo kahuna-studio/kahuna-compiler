@@ -3,7 +3,7 @@ pub mod adsr_envelope;
 // Inline modules are scanned too. The explicit id survives renaming the struct.
 pub mod followers {
     use kahuna_core::{Control, Midi, Parameter};
-    use kahuna_module::kahuna_module;
+    use kahuna_unit::kahuna_module;
 
     #[kahuna_module(id = "gate-follower")]
     pub struct GateToControl {

@@ -36,7 +36,7 @@ fn emit_imports() -> TokenStream {
                 MidiEvent,
             },
             patch::KahunaPatch,
-            KahunaModule, ModuleEnv,
+            KahunaConverter, KahunaModule, ModuleEnv,
         };
     }
 }

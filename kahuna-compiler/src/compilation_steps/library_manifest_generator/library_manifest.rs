@@ -27,6 +27,7 @@ pub struct UnitEntry {
 #[serde(rename_all = "lowercase")]
 pub enum UnitKind {
   Module,
+  Converter,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

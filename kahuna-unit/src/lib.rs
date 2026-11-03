@@ -1,5 +1,5 @@
 use kahuna_core::{Rate, StreamKind};
-use kahuna_unit_syntax::{parse_module, Direction, PortConfiguration, UnitAttributes};
+use kahuna_unit_syntax::{parse_unit, Direction, PortConfiguration, UnitAttributes, UnitKind};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::DeriveInput;
@@ -19,6 +19,14 @@ pub fn kahuna_module(attribute: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_attribute]
+pub fn kahuna_converter(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    match expand_converter(attribute.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
 fn expand(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
     let attributes = UnitAttributes::parse(attribute)?;
     let input: DeriveInput = syn::parse2(item)?;
@@ -27,11 +35,11 @@ fn expand(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -
     let visibility = &input.vis;
 
     // parse: shared with the compiler's manifest generator, so both agree on id and ports
-    let module = parse_module(&input, &attributes)?;
+    let module = parse_unit(UnitKind::Module, &input, &attributes)?;
     let unit_id = &module.id;
     let state_fields = &module.state_fields;
 
-    // generate: pure, infallible — parse_module already validated everything
+    // generate: pure, infallible — parse_unit already validated everything
     let (input_ports, output_ports): (Vec<&PortConfiguration>, Vec<&PortConfiguration>) = module.ports.iter()
       .partition(|port| port.direction == Direction::Input);
 
@@ -86,6 +94,40 @@ fn expand(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -
             const PORTS: &'static [kahuna_core::PortSpecification] = &[
                 #(#input_specifications)*
                 #(#output_specifications)*
+            ];
+            fn new(env: &kahuna_core::ModuleEnv) -> Self {
+                Self::init(env)
+            }
+        }
+    })
+}
+
+fn expand_converter(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    let attributes = UnitAttributes::parse(attribute)?;
+    let input: DeriveInput = syn::parse2(item)?;
+    let struct_name = &input.ident;
+    let struct_attributes = &input.attrs;
+    let visibility = &input.vis;
+
+    // parse: shared with the compiler's manifest generator, so both agree on id and ports
+    let converter = parse_unit(UnitKind::Converter, &input, &attributes)?;
+    let unit_id = &converter.id;
+    let state_fields = &converter.state_fields;
+
+    // only the port descriptions: process() takes the input and output values directly
+    let specifications = converter.ports(Direction::Input).map(|port| generate_input_port(port).specification)
+      .chain(converter.ports(Direction::Output).map(|port| generate_output_port(port).specification));
+
+    Ok(quote! {
+        #(#struct_attributes)*
+        #visibility struct #struct_name {
+            #(#state_fields),*
+        }
+
+        impl kahuna_core::KahunaConverter for #struct_name {
+            const ID: &'static str = #unit_id;
+            const PORTS: &'static [kahuna_core::PortSpecification] = &[
+                #(#specifications)*
             ];
             fn new(env: &kahuna_core::ModuleEnv) -> Self {
                 Self::init(env)
