@@ -1,0 +1,5 @@
+# Test fixture: the instrument's own unit library. It is only read, never compiled.
+[package]
+name = "test-synth-units"
+version = "0.1.0"
+edition = "2024"

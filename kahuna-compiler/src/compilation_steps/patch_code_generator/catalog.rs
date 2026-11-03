@@ -45,6 +45,7 @@ pub struct UnitSpec {
   pub outputs: Vec<PortSpec>,
 }
 
+#[derive(Debug)]
 pub struct StaticCatalog {
   units: HashMap<String, UnitSpec>,
 }

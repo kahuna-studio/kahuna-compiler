@@ -1,7 +1,7 @@
 //! Parses unit declarations (`#[kahuna_module]` structs) from Rust syntax.
 //!
 //! Shared by the `kahuna-module` macro, which generates code from it, and the compiler's
-//! manifest generator, which reads unit crates without compiling them. Keeping one parser
+//! manifest generator, which reads unit libraries without compiling them. Keeping one parser
 //! guarantees that both always agree on a unit's id and ports.
 
 use heck::ToKebabCase;

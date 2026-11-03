@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use eyre::{eyre, Result, WrapErr};
-use kahuna_compiler::api::write_unit_manifest;
+use kahuna_compiler::api::write_library_manifest;
 use kahuna_compiler::database::CompilerDatabase;
 use kahuna_compiler::inputs::{load_workspace, INSTRUMENT_FILE};
 use kahuna_compiler::runner::run;
@@ -22,18 +22,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Writes kahuna-units.json for a unit crate by reading its source, without compiling it
+    /// Writes kahuna-library.json for a unit library by reading its source, without compiling it
     Manifest {
-        /// Directory containing the unit crate's Cargo.toml
-        crate_dir: PathBuf,
+        /// Directory containing the library's Cargo.toml
+        library_dir: PathBuf,
     },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match (cli.command, cli.instrument_dir) {
-        (Some(Command::Manifest { crate_dir }), _) => {
-            let path = write_unit_manifest(&crate_dir)?;
+        (Some(Command::Manifest { library_dir }), _) => {
+            let path = write_library_manifest(&library_dir)?;
             println!("✓ Wrote {}", path.display());
             Ok(())
         }

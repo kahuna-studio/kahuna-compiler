@@ -1,24 +1,24 @@
 use serde::{Deserialize, Serialize};
 
-/// Lives at the root of a unit crate, next to its Cargo.toml.
-pub const UNIT_MANIFEST_FILE: &str = "kahuna-units.json";
+/// Lives at the root of a unit library, next to its Cargo.toml.
+pub const LIBRARY_MANIFEST_FILE: &str = "kahuna-library.json";
 
 pub const FORMAT_VERSION: u32 = 1;
 
-/// Describes every unit of one crate. Which crate it belongs to is not stored: that follows
-/// from where the file lives, which Cargo already knows.
+/// Describes every unit of one library. The library's name is not stored: it follows from
+/// where the file lives, which Cargo already knows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UnitManifest {
+pub struct LibraryManifest {
   pub format_version: u32,
   pub units: Vec<UnitEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitEntry {
-  /// Unique within the crate; what patches refer to.
+  /// Unique within the library; what patches refer to.
   pub id: String,
   pub kind: UnitKind,
-  /// Relative to the crate root, without the crate name.
+  /// Relative to the library's root module, without the library's name.
   pub rust_path: String,
   pub ports: Vec<PortEntry>,
 }

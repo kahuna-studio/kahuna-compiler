@@ -7,4 +7,5 @@ pub mod patch_code_parser;
 pub mod patch_file_parser;
 pub mod instrument_file_parser;
 pub mod patch_code_generator;
-pub mod unit_manifest_generator;
+pub mod library_manifest_generator;
+pub mod library_resolver;

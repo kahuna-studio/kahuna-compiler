@@ -1,4 +1,4 @@
-//! Builds a unit crate's manifest by reading its source with `syn`. Nothing is compiled.
+//! Builds a unit library's manifest by reading its source with `syn`. Nothing is compiled.
 //!
 //! Starting at the library root, the scanner follows `mod` declarations the same way rustc
 //! does and collects every struct marked `#[kahuna_module]`.
@@ -12,25 +12,25 @@ use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::{Attribute, DeriveInput, Item, ItemStruct, Meta, Type, Visibility};
 
-use crate::compilation_steps::unit_manifest_generator::unit_manifest::{
-  PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, UnitManifest, FORMAT_VERSION, UNIT_MANIFEST_FILE,
+use crate::compilation_steps::library_manifest_generator::library_manifest::{
+  PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, LibraryManifest, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
 };
 
 const MODULE_MARKER: &str = "kahuna_module";
 
-/// Scans the crate in `crate_dir` and writes its manifest next to its Cargo.toml.
-pub fn write_unit_manifest(crate_dir: &Path) -> Result<PathBuf> {
-  let manifest = generate_unit_manifest(crate_dir)?;
-  let path = crate_dir.join(UNIT_MANIFEST_FILE);
+/// Scans the library in `crate_dir` and writes its manifest next to its Cargo.toml.
+pub fn write_library_manifest(crate_dir: &Path) -> Result<PathBuf> {
+  let manifest = generate_library_manifest(crate_dir)?;
+  let path = crate_dir.join(LIBRARY_MANIFEST_FILE);
   fs::write(&path, to_json(&manifest)?).wrap_err_with(|| format!("Cannot write {}", path.display()))?;
   Ok(path)
 }
 
-pub fn to_json(manifest: &UnitManifest) -> Result<String> {
+pub fn to_json(manifest: &LibraryManifest) -> Result<String> {
   Ok(serde_json::to_string_pretty(manifest)? + "\n")
 }
 
-pub fn generate_unit_manifest(crate_dir: &Path) -> Result<UnitManifest> {
+pub fn generate_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
   let library_root = library_root(crate_dir)?;
   let children_dir = library_root
     .parent()
@@ -41,7 +41,7 @@ pub fn generate_unit_manifest(crate_dir: &Path) -> Result<UnitManifest> {
   scanner.scan_file(&library_root, &children_dir, &[], true)?;
   check_unique_ids(&scanner.units)?;
 
-  Ok(UnitManifest {
+  Ok(LibraryManifest {
     format_version: FORMAT_VERSION,
     units: scanner.units,
   })
@@ -63,7 +63,7 @@ fn library_root(crate_dir: &Path) -> Result<PathBuf> {
 
   if !library_root.is_file() {
     bail!(
-      "{} is not a library crate: {} not found. Units must live in a library to be usable from patches.",
+      "{} is not a library crate: {} not found. Unit libraries must be Rust library crates.",
       crate_dir.display(),
       library_root.display()
     );
@@ -259,7 +259,7 @@ mod tests {
   use super::*;
 
   fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unit_crates").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/libraries").join(name)
   }
 
   /// Writes `files` into a fresh crate directory below the system temp dir.
@@ -277,9 +277,9 @@ mod tests {
   #[test]
   fn matches_the_committed_manifest_of_the_fixture_crate() {
     let crate_dir = fixture("envelopes");
-    let expected = fs::read_to_string(crate_dir.join(UNIT_MANIFEST_FILE)).unwrap();
+    let expected = fs::read_to_string(crate_dir.join(LIBRARY_MANIFEST_FILE)).unwrap();
 
-    let manifest = generate_unit_manifest(&crate_dir).unwrap();
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
 
     assert_eq!(to_json(&manifest).unwrap(), expected);
   }
@@ -294,7 +294,7 @@ mod tests {
       ],
     );
 
-    let error = generate_unit_manifest(&crate_dir).unwrap_err();
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
 
     assert!(format!("{error}").contains("`hidden::Osc` is not reachable"), "{error}");
   }
@@ -310,7 +310,7 @@ mod tests {
       )],
     );
 
-    let error = generate_unit_manifest(&crate_dir).unwrap_err();
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
 
     assert!(format!("{error}").contains("both have the id `osc`"), "{error}");
   }
@@ -322,7 +322,7 @@ mod tests {
       &[("src/lib.rs", "#[kahuna_module]\npub struct Osc {\n  #[input(default = A)] a: Parameter<f32>,\n}")],
     );
 
-    let error = generate_unit_manifest(&crate_dir).unwrap_err();
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
 
     assert!(format!("{error}").contains("lib.rs:3:"), "{error}");
   }
@@ -331,7 +331,7 @@ mod tests {
   fn rejects_crates_without_a_library() {
     let crate_dir = temporary_crate("binary", &[("src/main.rs", "fn main() {}")]);
 
-    let error = generate_unit_manifest(&crate_dir).unwrap_err();
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
 
     assert!(format!("{error}").contains("is not a library crate"), "{error}");
   }
