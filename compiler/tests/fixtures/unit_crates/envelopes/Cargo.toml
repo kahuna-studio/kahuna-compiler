@@ -1,0 +1,9 @@
+# Test fixture for the unit manifest generator. It is only read, never compiled.
+[package]
+name = "envelopes"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kahuna-core = { path = "../../../../../kahuna-core" }
+kahuna-module = { path = "../../../../../kahuna-module" }

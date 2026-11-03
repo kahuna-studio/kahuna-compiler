@@ -8,6 +8,7 @@ proc-macro = true
 
 [dependencies]
 kahuna-core = { path = "../kahuna-core" }
+kahuna-unit-syntax = { path = "../kahuna-unit-syntax" }
 syn = { version = "3.0.4", features = ["full", "extra-traits"] }
 proc-macro2 = "1.0.107"
 quote = "1.0.47"

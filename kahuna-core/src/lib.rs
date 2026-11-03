@@ -157,6 +157,9 @@ pub struct ModuleEnv {
 pub trait KahunaModule: Sized {
     type Inputs<'a>;
     type Outputs<'a>;
+    /// Identifies the unit within its crate, e.g. in patch files. Kebab-case; defaults to the
+    /// struct name, can be pinned with `#[kahuna_module(id = "...")]` to survive renames.
+    const ID: &'static str;
     const PORTS: &'static [PortSpecification];
     fn new(env: &ModuleEnv) -> Self;
 }

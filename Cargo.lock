@@ -689,6 +689,8 @@ dependencies = [
  "clap",
  "eyre",
  "indexmap",
+ "kahuna-core",
+ "kahuna-unit-syntax",
  "lazy_static",
  "notify-debouncer-mini",
  "pest",
@@ -716,6 +718,7 @@ name = "kahuna-module"
 version = "0.1.0"
 dependencies = [
  "kahuna-core",
+ "kahuna-unit-syntax",
  "proc-macro2",
  "quote",
  "syn 3.0.4",
@@ -755,6 +758,16 @@ dependencies = [
  "kahuna-patch",
  "kahuna-runtime",
  "kahuna-std",
+]
+
+[[package]]
+name = "kahuna-unit-syntax"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "kahuna-core",
+ "proc-macro2",
+ "syn 3.0.4",
 ]
 
 [[package]]

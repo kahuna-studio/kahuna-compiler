@@ -1,0 +1,10 @@
+[package]
+name = "kahuna-unit-syntax"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kahuna-core = { path = "../kahuna-core" }
+heck = "0.5.0"
+syn = { version = "3.0.4", features = ["full", "extra-traits"] }
+proc-macro2 = "1.0.107"

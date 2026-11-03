@@ -1,0 +1,101 @@
+{
+  "format_version": 1,
+  "units": [
+    {
+      "id": "adsr-envelope",
+      "kind": "module",
+      "rust_path": "envelopes::adsr_envelope::AdsrEnvelope",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "gate",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "bool",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "attack",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.01
+        },
+        {
+          "direction": "input",
+          "name": "decay",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.1
+        },
+        {
+          "direction": "input",
+          "name": "sustain",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.7
+        },
+        {
+          "direction": "input",
+          "name": "release",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.2
+        },
+        {
+          "direction": "output",
+          "name": "envelope",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Unipolar"
+        }
+      ]
+    },
+    {
+      "id": "gate-follower",
+      "kind": "module",
+      "rust_path": "envelopes::followers::GateToControl",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "gate",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "bool",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "notes",
+          "stream_type": "event",
+          "value_type": "MidiEvent",
+          "required": false
+        },
+        {
+          "direction": "input",
+          "name": "transpose",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "i32",
+          "required": false,
+          "default": -12
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar"
+        }
+      ]
+    }
+  ]
+}

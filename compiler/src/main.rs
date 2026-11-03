@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use eyre::{eyre, Result, WrapErr};
+use kahuna_compiler::api::write_unit_manifest;
 use kahuna_compiler::database::CompilerDatabase;
 use kahuna_compiler::inputs::{load_workspace, INSTRUMENT_FILE};
 use kahuna_compiler::runner::run;
@@ -10,14 +11,39 @@ use std::sync::mpsc;
 
 /// Compiles a Kahuna instrument and recompiles on file changes.
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Directory containing instrument.toml
-    instrument_dir: PathBuf,
+    instrument_dir: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Writes kahuna-units.json for a unit crate by reading its source, without compiling it
+    Manifest {
+        /// Directory containing the unit crate's Cargo.toml
+        crate_dir: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
-    let base_dir = resolve_base_dir(Cli::parse().instrument_dir)?;
+    let cli = Cli::parse();
+    match (cli.command, cli.instrument_dir) {
+        (Some(Command::Manifest { crate_dir }), _) => {
+            let path = write_unit_manifest(&crate_dir)?;
+            println!("✓ Wrote {}", path.display());
+            Ok(())
+        }
+        (None, Some(instrument_dir)) => compile_and_watch(instrument_dir),
+        (None, None) => Err(eyre!("Expected an instrument directory or a command; see --help")),
+    }
+}
+
+fn compile_and_watch(instrument_dir: PathBuf) -> Result<()> {
+    let base_dir = resolve_base_dir(instrument_dir)?;
 
     let (tx, rx) = mpsc::channel();
     let mut db = CompilerDatabase::new(tx)?;

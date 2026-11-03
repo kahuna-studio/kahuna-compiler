@@ -37,6 +37,11 @@ mod tests {
     use kahuna_core::{KahunaModule, PortDirection, Rate, StreamKind, ValueType};
 
     #[test]
+    fn test_default_id() {
+        assert_eq!(SineOsc::ID, "sine-osc");
+    }
+
+    #[test]
     fn test_ports_reflection() {
         assert_eq!(SineOsc::PORTS.len(), 2);
 

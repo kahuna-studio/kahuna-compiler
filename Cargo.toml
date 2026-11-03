@@ -6,6 +6,7 @@ members = [
     "kahuna-module",
     "kahuna-patch",
     "kahuna-runtime",
-    "kahuna-std"
+    "kahuna-std",
+    "kahuna-unit-syntax"
 ]
 resolver = "3"
