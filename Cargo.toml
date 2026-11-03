@@ -4,7 +4,6 @@ members = [
     "golden_output",
     "kahuna-core",
     "kahuna-unit",
-    "kahuna-patch",
     "kahuna-runtime",
     "kahuna-std",
     "kahuna-unit-syntax"
