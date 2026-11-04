@@ -11,7 +11,11 @@ directly inside the Kahuna IDE, or be compiled further into a VST3/CLAP plugin o
   low-pass filter, an ADSR envelope).
 - **Converter** — a lightweight transform between two streams; one input, one output (e.g. transforming a MIDI
   event stream into a frequency signal).
-- **Unit** — a module or a converter. Used where something applies to both without distinguishing them.
+- **Value operator** — arithmetic on single values with no sense of time, e.g. multiply, add, clamp, crossfade.
+  Written as a plain function; the compiler calls it once per sample, so it works on audio signals and
+  parameters alike, depending on what is connected.
+- **Unit** — a module, a converter, or a value operator. Used where something applies to all of them without
+  distinguishing them.
 - **Patch** — a graph that wires units together, using I/O nodes to connect to the outside world.
 - **Parameter definition** — one value exposed for host automation: name, type, range. Hand-maintained; the
   compiler can suggest a starting set from a patch's unconnected ports and the parameters a library manifest
@@ -126,7 +130,7 @@ DAW's buffer callback or by `cpal` directly — that's decided entirely in `{ins
 | Crate                 | Role                                                                  |
 |------------------------|-----------------------------------------------------------------------|
 | `kahuna-core`         | Module, port, and patch abstractions                                  |
-| `kahuna-unit`         | `#[kahuna_module]` and `#[kahuna_converter]` macros for authoring units |
+| `kahuna-unit`         | `#[kahuna_module]`, `#[kahuna_converter]`, `#[kahuna_value_operator]` macros |
 | `kahuna-unit-syntax`  | Parser for unit declarations, shared by the macro and the compiler    |
 | `kahuna-std`          | Ready-made units, importable like any other library                   |
 | `kahuna-plugin`       | Bridges `{instrument}` to `nice-plug`                                 |

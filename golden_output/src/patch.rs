@@ -6,9 +6,8 @@ use kahuna_core::midi::polyphony::poly_buffer::PolyBuffer;
 use kahuna_core::midi::polyphony::voice_allocator::VoiceAllocator;
 use kahuna_core::patch::KahunaPatch;
 use kahuna_core::{KahunaConverter, KahunaModule, ModuleEnv};
-use kahuna_std::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
-use kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter;
-use kahuna_std::operators::Multiply;
+use kahuna_std::converters::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
+use kahuna_std::converters::midi_event_to_gate_parameter::MidiEventToGateParameter;
 
 #[allow(non_snake_case)]
 pub struct PatchState {
@@ -47,7 +46,6 @@ pub struct Patch {
     poly_0__sine_osc_0: Vec<SineOsc>,
     poly_0__midi_events_to_gate_parameter_0: Vec<MidiEventToGateParameter>,
     poly_0__adsr_envelope_0: Vec<AdsrEnvelope>,
-    poly_0__multiply_0: Vec<Multiply>,
     audio_out_0: Box<dyn AudioOutputNode>,
 
     state: PatchState,
@@ -83,7 +81,6 @@ impl Patch {
                 .map(|_| AdsrEnvelope::new(&env))
                 .collect(),
 
-            poly_0__multiply_0: (0..poly_0_voices).map(|_| Multiply::new(&env)).collect(),
 
             audio_out_0: factory.create_audio_out(),
 
@@ -138,13 +135,15 @@ impl KahunaPatch for Patch {
                 ),
             );
 
-            self.poly_0__multiply_0[voice].process(
-                &[
-                    &self.state.poly_0__sine_osc_0__out.voice(voice)[..frames],
-                    &self.state.poly_0__adsr_envelope_0__envelope.voice(voice)[..frames],
-                ],
-                &mut self.state.poly_0__multiply_0__out.voice_mut(voice)[..frames],
-            );
+            {
+                let out = &mut self.state.poly_0__multiply_0__out.voice_mut(voice)[..frames];
+                for frame in 0..frames {
+                    out[frame] = kahuna_std::value_operators::arithmetic::multiply(
+                        self.state.poly_0__sine_osc_0__out.voice(voice)[frame],
+                        self.state.poly_0__adsr_envelope_0__envelope.voice(voice)[frame],
+                    );
+                }
+            }
         }
 
         self.state.merge__out[..frames].fill(0.0);

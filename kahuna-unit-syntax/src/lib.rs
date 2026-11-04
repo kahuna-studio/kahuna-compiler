@@ -1,4 +1,5 @@
-//! Parses unit declarations (`#[kahuna_module]` and `#[kahuna_converter]` structs) from Rust syntax.
+//! Parses unit declarations from Rust syntax: `#[kahuna_module]` and `#[kahuna_converter]` structs,
+//! and `#[kahuna_value_operator]` functions.
 //!
 //! Shared by the `kahuna-unit` macros, which generate code from it, and the compiler's
 //! manifest generator, which reads unit libraries without compiling them. Keeping one parser
@@ -9,6 +10,10 @@ use kahuna_core::{Rate, StreamKind};
 use proc_macro2::TokenStream;
 use syn::parse::{ParseStream, Parser};
 use syn::{Data, DeriveInput, Expr, Field, Fields, GenericArgument, Ident, Lit, LitStr, PathArguments, Type, UnOp};
+
+mod operator;
+
+pub use operator::{parse_value_operator, strip_input_attributes, OperatorDeclaration, OperatorPort, OperatorPortType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -56,10 +61,12 @@ pub enum LiteralValue {
     Float(f64),
 }
 
-/// The arguments of `#[kahuna_module(...)]` and `#[kahuna_converter(...)]`.
+/// The arguments of a unit's attribute, e.g. `#[kahuna_module(id = "...")]`.
 #[derive(Default)]
 pub struct UnitAttributes {
     pub id: Option<LitStr>,
+    /// Value operators only: the name of the variadic port the function is folded over.
+    pub fold: Option<LitStr>,
 }
 
 impl UnitAttributes {
@@ -76,8 +83,11 @@ impl UnitAttributes {
                 }
                 attributes.id = Some(id);
                 Ok(())
+            } else if meta.path.is_ident("fold") {
+                attributes.fold = Some(meta.value()?.parse()?);
+                Ok(())
             } else {
-                Err(meta.error("unknown key; expected `id`"))
+                Err(meta.error("unknown key; expected `id` or `fold`"))
             }
         });
         parser.parse2(tokens)?;
@@ -89,19 +99,28 @@ impl UnitAttributes {
 pub enum UnitKind {
     Module,
     Converter,
+    ValueOperator,
 }
 
 impl UnitKind {
-    /// The attribute that marks a struct as this kind of unit.
+    const ALL: [UnitKind; 3] = [UnitKind::Module, UnitKind::Converter, UnitKind::ValueOperator];
+
+    /// The attribute that marks a struct (modules, converters) or a function (operators) as this kind of unit.
     pub fn marker(self) -> &'static str {
         match self {
             UnitKind::Module => "kahuna_module",
             UnitKind::Converter => "kahuna_converter",
+            UnitKind::ValueOperator => "kahuna_value_operator",
         }
     }
 
     pub fn from_marker(marker: &str) -> Option<Self> {
-        [UnitKind::Module, UnitKind::Converter].into_iter().find(|kind| kind.marker() == marker)
+        Self::ALL.into_iter().find(|kind| kind.marker() == marker)
+    }
+
+    /// Operators are declared as functions, all other units as structs.
+    pub fn is_operator(self) -> bool {
+        self == UnitKind::ValueOperator
     }
 }
 
@@ -121,6 +140,10 @@ impl UnitDeclaration<'_> {
 
 pub fn parse_unit<'a>(kind: UnitKind, input: &'a DeriveInput, attributes: &UnitAttributes) -> syn::Result<UnitDeclaration<'a>> {
     let marker = kind.marker();
+    assert!(!kind.is_operator(), "operators are functions; parse them with parse_value_operator");
+    if let Some(fold) = &attributes.fold {
+        return Err(syn::Error::new_spanned(fold, format!("`fold` only applies to #[{}]", UnitKind::ValueOperator.marker())));
+    }
     let Data::Struct(data) = &input.data else {
         return Err(syn::Error::new_spanned(input, format!("#[{marker}] only supports structs")));
     };

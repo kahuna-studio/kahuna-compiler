@@ -10,6 +10,16 @@ pub enum ValueKind {
   Signal,
   Float,
   Bool,
+  /// Ports of value operators only: an audio signal or a parameter, whichever is connected.
+  /// Never the kind of a buffer; an operator's output resolves to `Signal` or `Float`.
+  Number,
+}
+
+impl ValueKind {
+  /// Whether a port of this kind takes a connection from a buffer of `source` kind.
+  pub fn accepts(self, source: ValueKind) -> bool {
+    self == source || (self == ValueKind::Number && matches!(source, ValueKind::Signal | ValueKind::Float))
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +34,11 @@ pub struct PortSpec {
   pub name: String,
   pub kind: ValueKind,
   pub arity: Arity,
+  /// Variadic ports only.
+  pub min_connections: usize,
+  /// Value operator inputs only: what the generated code passes when the port is unconnected.
+  /// (Modules resolve their own defaults.)
+  pub default: Option<f32>,
 }
 
 /// How the generated code invokes `process` on a unit.
@@ -33,8 +48,10 @@ pub enum CallStyle {
   Converter,
   /// `unit.process(&<Unit as KahunaModule>::Inputs::new(..), &mut <Unit as KahunaModule>::Outputs::new(..))`
   Module,
-  /// `unit.process(&[&input_0, &input_1, ..], &mut output)`
-  VariadicSlice,
+  /// No instance: `out[frame] = operator(input_0[frame], ..)`, once per sample for an audio
+  /// signal output, once per block for a parameter output. A folded operator is applied
+  /// pairwise over all connections of its one variadic input.
+  ValueOperator { fold: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -77,11 +94,23 @@ impl PortSpec {
     Self::with_arity(name, kind, Arity::Variadic)
   }
 
+  pub fn with_min_connections(mut self, min_connections: usize) -> Self {
+    self.min_connections = min_connections;
+    self
+  }
+
+  pub fn with_default(mut self, default: f32) -> Self {
+    self.default = Some(default);
+    self
+  }
+
   fn with_arity(name: &str, kind: ValueKind, arity: Arity) -> Self {
     Self {
       name: name.to_string(),
       kind,
       arity,
+      min_connections: 0,
+      default: None,
     }
   }
 }
@@ -91,7 +120,7 @@ pub fn builtin_catalog() -> StaticCatalog {
     (
       "kahuna_std::MidiEventToFrequencyParameter".to_string(),
       UnitSpec {
-        type_path: "kahuna_std::mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter".to_string(),
+        type_path: "kahuna_std::converters::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter".to_string(),
         call_style: CallStyle::Converter,
         inputs: vec![PortSpec::required("midi_events", ValueKind::Events)],
         outputs: vec![PortSpec::required("out", ValueKind::Float)],
@@ -100,7 +129,7 @@ pub fn builtin_catalog() -> StaticCatalog {
     (
       "kahuna_std::MidiEventToGateParameter".to_string(),
       UnitSpec {
-        type_path: "kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter".to_string(),
+        type_path: "kahuna_std::converters::midi_event_to_gate_parameter::MidiEventToGateParameter".to_string(),
         call_style: CallStyle::Converter,
         inputs: vec![PortSpec::required("midi_events", ValueKind::Events)],
         outputs: vec![PortSpec::required("out", ValueKind::Bool)],
@@ -131,12 +160,25 @@ pub fn builtin_catalog() -> StaticCatalog {
       },
     ),
     (
-      "self::Multiply".to_string(),
+      "kahuna-std/multiply".to_string(),
       UnitSpec {
-        type_path: "kahuna_std::operators::Multiply".to_string(),
-        call_style: CallStyle::VariadicSlice,
-        inputs: vec![PortSpec::variadic("in", ValueKind::Signal)],
-        outputs: vec![PortSpec::required("out", ValueKind::Signal)],
+        type_path: "kahuna_std::value_operators::arithmetic::multiply".to_string(),
+        call_style: CallStyle::ValueOperator { fold: true },
+        inputs: vec![PortSpec::variadic("in", ValueKind::Number).with_min_connections(2)],
+        outputs: vec![PortSpec::required("out", ValueKind::Number)],
+      },
+    ),
+    (
+      "kahuna-std/scale-offset".to_string(),
+      UnitSpec {
+        type_path: "kahuna_std::value_operators::arithmetic::scale_offset".to_string(),
+        call_style: CallStyle::ValueOperator { fold: false },
+        inputs: vec![
+          PortSpec::required("input", ValueKind::Number),
+          PortSpec::optional("scale", ValueKind::Number).with_default(1.0),
+          PortSpec::optional("offset", ValueKind::Number).with_default(0.0),
+        ],
+        outputs: vec![PortSpec::required("out", ValueKind::Number)],
       },
     ),
   ])

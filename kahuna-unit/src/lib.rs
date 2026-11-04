@@ -1,8 +1,10 @@
 use kahuna_core::{Rate, StreamKind};
-use kahuna_unit_syntax::{parse_unit, Direction, PortConfiguration, UnitAttributes, UnitKind};
+use kahuna_unit_syntax::{
+    parse_unit, parse_value_operator, strip_input_attributes, Direction, PortConfiguration, UnitAttributes, UnitKind,
+};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::DeriveInput;
+use syn::{DeriveInput, ItemFn};
 
 struct GeneratedPort {
     field_declaration: proc_macro2::TokenStream,
@@ -22,6 +24,14 @@ pub fn kahuna_module(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn kahuna_converter(attribute: TokenStream, item: TokenStream) -> TokenStream {
     match expand_converter(attribute.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn kahuna_value_operator(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    match expand_value_operator(attribute.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -134,6 +144,22 @@ fn expand_converter(attribute: proc_macro2::TokenStream, item: proc_macro2::Toke
             }
         }
     })
+}
+
+fn expand_value_operator(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    let attributes = UnitAttributes::parse(attribute)?;
+    let mut function: ItemFn = syn::parse2(item)?;
+
+    // parse: only to validate; the manifest generator reads the same declaration
+    parse_value_operator(&function, &attributes)?;
+
+    strip_input_attributes(&mut function);
+    // generated patch code calls the operator once per sample, from another crate
+    if !function.attrs.iter().any(|attribute| attribute.path().is_ident("inline")) {
+        function.attrs.push(syn::parse_quote!(#[inline]));
+    }
+
+    Ok(quote! { #function })
 }
 
 fn generate_input_port(port: &PortConfiguration) -> GeneratedPort {

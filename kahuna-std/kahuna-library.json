@@ -4,7 +4,7 @@
     {
       "id": "midi-event-to-frequency-parameter",
       "kind": "converter",
-      "rust_path": "mapping::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter",
+      "rust_path": "converters::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter",
       "ports": [
         {
           "direction": "input",
@@ -25,7 +25,7 @@
     {
       "id": "midi-event-to-gate-parameter",
       "kind": "converter",
-      "rust_path": "mapping::midi_event_to_gate_parameter::MidiEventToGateParameter",
+      "rust_path": "converters::midi_event_to_gate_parameter::MidiEventToGateParameter",
       "ports": [
         {
           "direction": "input",
@@ -40,6 +40,363 @@
           "stream_type": "parameter",
           "rate": "control",
           "value_type": "bool"
+        }
+      ]
+    },
+    {
+      "id": "multiply",
+      "kind": "value-operator",
+      "rust_path": "value_operators::arithmetic::multiply",
+      "fold": true,
+      "ports": [
+        {
+          "direction": "input",
+          "name": "in",
+          "value_type": "f32",
+          "min_connections": 2
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "add",
+      "kind": "value-operator",
+      "rust_path": "value_operators::arithmetic::add",
+      "fold": true,
+      "ports": [
+        {
+          "direction": "input",
+          "name": "in",
+          "value_type": "f32",
+          "min_connections": 2
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "subtract",
+      "kind": "value-operator",
+      "rust_path": "value_operators::arithmetic::subtract",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "invert",
+      "kind": "value-operator",
+      "rust_path": "value_operators::arithmetic::invert",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "input",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "scale-offset",
+      "kind": "value-operator",
+      "rust_path": "value_operators::arithmetic::scale_offset",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "input",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "scale",
+          "value_type": "f32",
+          "required": false,
+          "default": 1.0,
+          "range": [
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "direction": "input",
+          "name": "offset",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0,
+          "range": [
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "min",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::min",
+      "fold": true,
+      "ports": [
+        {
+          "direction": "input",
+          "name": "in",
+          "value_type": "f32",
+          "min_connections": 2
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "max",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::max",
+      "fold": true,
+      "ports": [
+        {
+          "direction": "input",
+          "name": "in",
+          "value_type": "f32",
+          "min_connections": 2
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "clamp",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::clamp",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "input",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "low",
+          "value_type": "f32",
+          "required": false,
+          "default": -1.0
+        },
+        {
+          "direction": "input",
+          "name": "high",
+          "value_type": "f32",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "greater",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::greater",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "bool"
+        }
+      ]
+    },
+    {
+      "id": "greater-or-equal",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::greater_or_equal",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "bool"
+        }
+      ]
+    },
+    {
+      "id": "less",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::less",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "bool"
+        }
+      ]
+    },
+    {
+      "id": "less-or-equal",
+      "kind": "value-operator",
+      "rust_path": "value_operators::comparison::less_or_equal",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "bool"
+        }
+      ]
+    },
+    {
+      "id": "crossfade",
+      "kind": "value-operator",
+      "rust_path": "value_operators::mixing::crossfade",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "a",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "b",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "position",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0,
+          "range": [
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "f32"
+        }
+      ]
+    },
+    {
+      "id": "select",
+      "kind": "value-operator",
+      "rust_path": "value_operators::mixing::select",
+      "type_parameters": [
+        "T"
+      ],
+      "ports": [
+        {
+          "direction": "input",
+          "name": "position",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.0,
+          "range": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "direction": "input",
+          "name": "inputs",
+          "value_type": "T",
+          "min_connections": 2
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "value_type": "T"
         }
       ]
     }

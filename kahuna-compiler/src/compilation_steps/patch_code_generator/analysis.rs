@@ -1,6 +1,6 @@
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use std::collections::{BTreeSet, HashSet};
-use crate::compilation_steps::patch_code_generator::catalog::{Arity, PortSpec, UnitCatalog, UnitSpec, ValueKind};
+use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, UnitCatalog, UnitSpec, ValueKind};
 use crate::compilation_steps::patch_file_parser::patch_graph::{Edge, Node, PatchGraph};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +124,7 @@ fn analyze_node(
     .map(|port| BufferRef {
       node_id: node.id().to_string(),
       port_name: port.name.clone(),
-      kind: port.kind,
+      kind: resolved_output_kind(port.kind, &inputs),
       domain: output_domain.clone(),
     })
     .collect();
@@ -152,11 +152,20 @@ fn behavior_of(node: &Node, catalog: &dyn UnitCatalog) -> Result<Behavior> {
         voices: *voices,
       })
     }
-    Node::Module { id, unit } | Node::Converter { id, unit } => catalog
-      .find(unit)
-      .cloned()
-      .map(|spec| Behavior::Unit { spec })
-      .ok_or_else(|| eyre!("node '{id}' uses unknown unit '{unit}'")),
+    Node::Module { id, unit } | Node::Converter { id, unit } | Node::Operator { id, unit } => {
+      let spec = catalog
+        .find(unit)
+        .cloned()
+        .ok_or_else(|| eyre!("node '{id}' uses unknown unit '{unit}'"))?;
+      let matches_node_kind = matches!(
+        (node, &spec.call_style),
+        (Node::Module { .. }, CallStyle::Module)
+          | (Node::Converter { .. }, CallStyle::Converter)
+          | (Node::Operator { .. }, CallStyle::ValueOperator { .. })
+      );
+      ensure!(matches_node_kind, "node '{id}' has the wrong kind for unit '{unit}', which is a {}", unit_kind_name(&spec.call_style));
+      Ok(Behavior::Unit { spec })
+    }
     Node::Merge { mode, .. } => match mode.as_str() {
       "average" => Ok(Behavior::Merge {
         mode: MergeMode::Average,
@@ -166,6 +175,14 @@ fn behavior_of(node: &Node, catalog: &dyn UnitCatalog) -> Result<Behavior> {
       }),
       other => bail!("merge mode '{other}' is not supported (expected 'average' or 'sum')"),
     },
+  }
+}
+
+fn unit_kind_name(call_style: &CallStyle) -> &'static str {
+  match call_style {
+    CallStyle::Module => "module",
+    CallStyle::Converter => "converter",
+    CallStyle::ValueOperator { .. } => "operator",
   }
 }
 
@@ -220,7 +237,7 @@ fn derive_domains(node: &Node, sources: &[BufferRef]) -> Result<(Domain, Domain)
             );
       Ok((Domain::Mono, Domain::Mono))
     }
-    Node::Module { id, .. } | Node::Converter { id, .. } => match poly_ids.as_slice() {
+    Node::Module { id, .. } | Node::Converter { id, .. } | Node::Operator { id, .. } => match poly_ids.as_slice() {
       [] => Ok((Domain::Mono, Domain::Mono)),
       [poly_id] => {
         let domain = Domain::Poly {
@@ -286,10 +303,23 @@ fn resolve_input(
   })
 }
 
+/// A value operator's `Number` output carries an audio signal as soon as one input does,
+/// and a parameter otherwise.
+fn resolved_output_kind(kind: ValueKind, inputs: &[ResolvedInput]) -> ValueKind {
+  if kind != ValueKind::Number {
+    return kind;
+  }
+  let any_signal = inputs
+    .iter()
+    .flat_map(|input| &input.connections)
+    .any(|connection| connection.source.kind == ValueKind::Signal);
+  if any_signal { ValueKind::Signal } else { ValueKind::Float }
+}
+
 fn validate_connections(node_id: &str, port: &PortSpec, connections: &[Connection]) -> Result<()> {
   if let Some(mismatch) = connections
     .iter()
-    .find(|connection| connection.source.kind != port.kind)
+    .find(|connection| !port.kind.accepts(connection.source.kind))
   {
     bail!(
             "type mismatch on '{node_id}.{}': expected {:?}, but '{}.{}' provides {:?}",
@@ -320,7 +350,16 @@ fn validate_connections(node_id: &str, port: &PortSpec, connections: &[Connectio
             );
       validate_unindexed(node_id, port, connections)
     }
-    Arity::Variadic => validate_contiguous_indices(node_id, port, connections),
+    Arity::Variadic => {
+      ensure!(
+                connections.len() >= port.min_connections,
+                "input '{node_id}.{}' needs at least {} connections, found {}",
+                port.name,
+                port.min_connections,
+                connections.len()
+            );
+      validate_contiguous_indices(node_id, port, connections)
+    }
   }
 }
 

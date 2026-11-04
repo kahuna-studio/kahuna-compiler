@@ -19,6 +19,7 @@ pub enum Node {
     Poly { id: String, voices: usize },
     Module { id: String, unit: String },
     Converter { id: String, unit: String },
+    Operator { id: String, unit: String },
     Merge { id: String, mode: String },
 }
 
@@ -29,6 +30,7 @@ impl Node {
             | Node::Poly { id, .. }
             | Node::Module { id, .. }
             | Node::Converter { id, .. }
+            | Node::Operator { id, .. }
             | Node::Merge { id, .. } => id,
         }
     }

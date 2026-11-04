@@ -89,6 +89,7 @@ fn buffer_type(buffer: &BufferRef) -> TokenStream {
     (ValueKind::Float, Domain::Poly { .. }) => quote!(Vec<f32>),
     (ValueKind::Bool, Domain::Mono) => quote!(bool),
     (ValueKind::Bool, Domain::Poly { .. }) => quote!(Vec<bool>),
+    (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
 
@@ -114,6 +115,7 @@ fn buffer_initializer(buffer: &BufferRef) -> TokenStream {
       let voices = voices_ident(poly_id);
       quote!(vec![false; #voices])
     }
+    (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
 
@@ -208,6 +210,8 @@ fn instance_code(node: &AnalyzedNode) -> Result<Option<InstanceCode>> {
       let voices = voices_ident(poly_id);
       Some((quote!(VoiceAllocator), quote!(VoiceAllocator::new(#voices))))
     }
+    // value operators are plain functions without an instance
+    Behavior::Unit { spec } if matches!(spec.call_style, CallStyle::ValueOperator { .. }) => None,
     Behavior::Unit { spec } => Some(unit_instance(spec, &node.run_domain)?),
     Behavior::Merge { .. } => None,
   };
@@ -341,14 +345,86 @@ fn emit_merge(node: &AnalyzedNode, mode: MergeMode) -> Result<TokenStream> {
 }
 
 fn emit_unit_call(node: &AnalyzedNode, spec: &UnitSpec) -> Result<TokenStream> {
-  let instance = instance_expression(node);
   let arguments = match &spec.call_style {
     CallStyle::Converter => converter_arguments(node)?,
     CallStyle::Module => module_arguments(node, &spec.type_path)?,
-    CallStyle::VariadicSlice => slice_arguments(node)?,
+    CallStyle::ValueOperator { fold } => return emit_value_operator(node, spec, *fold),
   };
 
+  let instance = instance_expression(node);
   Ok(quote!(#instance.process(#arguments);))
+}
+
+/// Calls the operator once per sample for an audio signal output, once per block for a
+/// parameter output; a parameter input contributes its value to every sample.
+fn emit_value_operator(node: &AnalyzedNode, spec: &UnitSpec, fold: bool) -> Result<TokenStream> {
+  let function = parse_path(&spec.type_path)?;
+  let output = only_output(node)?;
+  let per_sample = output.kind == ValueKind::Signal;
+
+  let mut arguments = Vec::new();
+  for input in &node.inputs {
+    if input.connections.is_empty() {
+      let default = input
+        .port
+        .default
+        .ok_or_else(|| eyre!("input '{}.{}' is not connected and has no default", node.id, input.port.name))?;
+      arguments.push(quote!(#default));
+    }
+    for connection in &input.connections {
+      arguments.push(operator_argument(&connection.source, &node.run_domain, per_sample));
+    }
+  }
+
+  let call = if fold {
+    let mut values = arguments.into_iter();
+    let first = values
+      .next()
+      .ok_or_else(|| eyre!("operator '{}' has no connections to combine", node.id))?;
+    values.fold(first, |left, right| quote!(#function(#left, #right)))
+  } else {
+    quote!(#function(#(#arguments),*))
+  };
+
+  if per_sample {
+    let samples = write_expression(output);
+    Ok(quote! {
+            {
+                let out = #samples;
+                for frame in 0..frames {
+                    out[frame] = #call;
+                }
+            }
+        })
+  } else {
+    let value = operator_output_place(output);
+    Ok(quote!(#value = #call;))
+  }
+}
+
+/// One input value: the current sample of an audio signal, or a parameter's value.
+fn operator_argument(source: &BufferRef, consumer: &Domain, per_sample: bool) -> TokenStream {
+  let field = buffer_field(source);
+  let voice_scoped = matches!(
+        (&source.domain, consumer),
+        (Domain::Poly { .. }, Domain::Poly { .. })
+    );
+
+  match (source.kind, voice_scoped) {
+    (ValueKind::Signal, false) if per_sample => quote!(self.state.#field[frame]),
+    (ValueKind::Signal, true) if per_sample => quote!(self.state.#field.voice(voice)[frame]),
+    (_, false) => quote!(self.state.#field),
+    (_, true) => quote!(self.state.#field[voice]),
+  }
+}
+
+/// Where a parameter output's value goes.
+fn operator_output_place(output: &BufferRef) -> TokenStream {
+  let field = buffer_field(output);
+  match output.domain {
+    Domain::Mono => quote!(self.state.#field),
+    Domain::Poly { .. } => quote!(self.state.#field[voice]),
+  }
 }
 
 fn converter_arguments(node: &AnalyzedNode) -> Result<TokenStream> {
@@ -382,17 +458,6 @@ fn module_input_argument(input: &ResolvedInput, consumer: &Domain) -> TokenStrea
   }
 }
 
-fn slice_arguments(node: &AnalyzedNode) -> Result<TokenStream> {
-  let inputs = node
-    .inputs
-    .iter()
-    .flat_map(|input| &input.connections)
-    .map(|connection| read_expression(&connection.source, &node.run_domain));
-  let output = write_expression(only_output(node)?);
-
-  Ok(quote!(&[#(#inputs),*], #output))
-}
-
 // ---------------------------------------------------------------------------
 // Buffer access expressions
 // ---------------------------------------------------------------------------
@@ -413,6 +478,7 @@ fn read_expression(source: &BufferRef, consumer: &Domain) -> TokenStream {
     (ValueKind::Signal, true) => quote!(&self.state.#field.voice(voice)[..frames]),
     (ValueKind::Float | ValueKind::Bool, false) => quote!(self.state.#field),
     (ValueKind::Float | ValueKind::Bool, true) => quote!(self.state.#field[voice]),
+    (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
 
@@ -427,6 +493,7 @@ fn write_expression(output: &BufferRef) -> TokenStream {
     (ValueKind::Signal, true) => quote!(&mut self.state.#field.voice_mut(voice)[..frames]),
     (ValueKind::Float | ValueKind::Bool, false) => quote!(&mut self.state.#field),
     (ValueKind::Float | ValueKind::Bool, true) => quote!(&mut self.state.#field[voice]),
+    (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
 
@@ -507,7 +574,7 @@ mod tests {
     { "id": "sine_osc_0", "kind": "module", "unit": "self::SineOsc" },
     { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToGateParameter" },
     { "id": "adsr_0", "kind": "module", "unit": "self::AdsrEnvelope" },
-    { "id": "mult_0", "kind": "module", "unit": "self::Multiply" },
+    { "id": "mult_0", "kind": "operator", "unit": "kahuna-std/multiply" },
     { "id": "merge_0", "kind": "merge", "mode": "average" },
     { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
   ],
@@ -531,7 +598,12 @@ mod tests {
     let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
 
     assert!(contains_code(&source, "for voice in 0..self.poly_0_voices"));
-    assert!(contains_code(&source, "self.poly_0__mult_0[voice].process"));
+    assert!(contains_code(
+      &source,
+      "out[frame] = kahuna_std::value_operators::arithmetic::multiply(\
+         self.state.poly_0__sine_osc_0__out.voice(voice)[frame], \
+         self.state.poly_0__adsr_0__envelope.voice(voice)[frame])"
+    ), "{source}");
     assert!(contains_code(&source, "self.state.merge_0__out[..frames].fill(0.0)"));
     assert!(contains_code(&source, "self.audio_out_0.process"));
   }
@@ -545,9 +617,9 @@ mod tests {
     assert!(contains_code(&source, "<crate::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Outputs::new("));
   }
 
-  /// prettyplease wraps long lines, so compare with all whitespace removed.
+  /// prettyplease wraps long lines and then adds trailing commas, so compare without both.
   fn contains_code(source: &str, snippet: &str) -> bool {
-    let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<String>().replace(",)", ")");
     strip(source).contains(&strip(snippet))
   }
 
@@ -560,13 +632,68 @@ mod tests {
     assert!(format!("{error:#}").contains("merge"));
   }
 
+  /// A patch where a value operator only sees parameters: the frequency, scaled.
+  const PARAMETER_OPERATOR_PATCH: &str = r#"
+{
+  "nodes": [
+    { "id": "midi_in_0", "kind": "interface", "interface": "midi_in" },
+    { "id": "poly_0", "kind": "poly", "voices": 4 },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToFrequencyParameter" },
+    { "id": "octave_0", "kind": "operator", "unit": "kahuna-std/scale-offset" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "self::SineOsc" },
+    { "id": "merge_0", "kind": "merge", "mode": "sum" },
+    { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
+  ],
+  "edges": [
+    { "from": "midi_in_0.midi_events", "to": "poly_0.midi_events" },
+    { "from": "poly_0.out", "to": "freq_conv_0.midi_events" },
+    { "from": "freq_conv_0.out", "to": "octave_0.input" },
+    { "from": "octave_0.out", "to": "sine_osc_0.frequency" },
+    { "from": "sine_osc_0.out", "to": "merge_0.in" },
+    { "from": "merge_0.out", "to": "audio_out_0.in" }
+  ]
+}
+"#;
+
+  #[test]
+  fn operator_on_parameters_runs_once_per_block_with_defaults_for_unconnected_inputs() {
+    let graph: PatchGraph = PARAMETER_OPERATOR_PATCH.parse().unwrap();
+    let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
+
+    assert!(contains_code(
+      &source,
+      "self.state.poly_0__octave_0__out[voice] = kahuna_std::value_operators::arithmetic::scale_offset(\
+         self.state.poly_0__freq_conv_0__out[voice], 1f32, 0f32);"
+    ), "{source}");
+    assert!(contains_code(&source, "poly_0__octave_0__out: Vec<f32>"));
+    assert!(!source.contains("octave_0: "), "operators have no instance");
+  }
+
+  #[test]
+  fn rejects_too_few_connections_to_a_variadic_input() {
+    let json = SINE_PATCH.replace("{ \"from\": \"adsr_0.envelope\", \"to\": \"mult_0.in[1]\" },", "");
+    let graph: PatchGraph = json.parse().unwrap();
+
+    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    assert!(format!("{error:#}").contains("needs at least 2 connections"), "{error:#}");
+  }
+
+  #[test]
+  fn rejects_nodes_whose_kind_does_not_match_the_unit() {
+    let json = SINE_PATCH.replace("\"kind\": \"operator\"", "\"kind\": \"module\"");
+    let graph: PatchGraph = json.parse().unwrap();
+
+    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    assert!(format!("{error:#}").contains("wrong kind for unit 'kahuna-std/multiply'"), "{error:#}");
+  }
+
   #[test]
   fn rejects_cycles() {
     let json = r#"
 {
   "nodes": [
-    { "id": "a", "kind": "module", "unit": "self::Multiply" },
-    { "id": "b", "kind": "module", "unit": "self::Multiply" }
+    { "id": "a", "kind": "operator", "unit": "kahuna-std/multiply" },
+    { "id": "b", "kind": "operator", "unit": "kahuna-std/multiply" }
   ],
   "edges": [
     { "from": "a.out", "to": "b.in[0]" },

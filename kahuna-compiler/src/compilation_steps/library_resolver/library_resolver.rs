@@ -258,20 +258,37 @@ fn read_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
 fn unit_spec(unit: &UnitEntry, extern_name: &str) -> Result<UnitSpec> {
   let (inputs, outputs): (Vec<&PortEntry>, Vec<&PortEntry>) =
     unit.ports.iter().partition(|port| port.direction == PortDirection::Input);
+  let call_style = match unit.kind {
+    UnitKind::Module => CallStyle::Module,
+    UnitKind::Converter => CallStyle::Converter,
+    UnitKind::ValueOperator => {
+      ensure!(
+        unit.type_parameters.is_empty(),
+        "operators with type parameters ({}) can't be used in patches yet",
+        unit.type_parameters.join(", ")
+      );
+      CallStyle::ValueOperator { fold: unit.fold }
+    }
+  };
+  let port_spec = |port: &PortEntry| match unit.kind {
+    UnitKind::Module | UnitKind::Converter => struct_unit_port_spec(port),
+    UnitKind::ValueOperator => operator_port_spec(port, unit.fold),
+  };
 
   Ok(UnitSpec {
     type_path: format!("{extern_name}::{}", unit.rust_path),
-    call_style: match unit.kind {
-      UnitKind::Module => CallStyle::Module,
-      UnitKind::Converter => CallStyle::Converter,
-    },
+    call_style,
     inputs: inputs.into_iter().map(port_spec).collect::<Result<_>>()?,
     outputs: outputs.into_iter().map(port_spec).collect::<Result<_>>()?,
   })
 }
 
-fn port_spec(port: &PortEntry) -> Result<PortSpec> {
-  let kind = match (port.stream_type, port.value_type.as_str()) {
+/// Modules and converters.
+fn struct_unit_port_spec(port: &PortEntry) -> Result<PortSpec> {
+  let stream_type = port
+    .stream_type
+    .ok_or_else(|| eyre!("port '{}' has no stream type", port.name))?;
+  let kind = match (stream_type, port.value_type.as_str()) {
     (StreamType::Event, _) => ValueKind::Events,
     (StreamType::Signal, _) => ValueKind::Signal,
     (StreamType::Parameter, "bool") => ValueKind::Bool,
@@ -279,11 +296,43 @@ fn port_spec(port: &PortEntry) -> Result<PortSpec> {
     (StreamType::Parameter, other) => bail!("parameter port '{}' has type '{other}', which patches don't support yet", port.name),
   };
   // Only parameters with a default can stay unconnected; their constructor argument is an Option.
-  let arity = match (port.direction, port.stream_type, port.required) {
+  let arity = match (port.direction, stream_type, port.required) {
     (PortDirection::Input, StreamType::Parameter, Some(false)) => Arity::Optional,
     _ => Arity::Required,
   };
-  Ok(PortSpec { name: port.name.clone(), kind, arity })
+  Ok(PortSpec {
+    name: port.name.clone(),
+    kind,
+    arity,
+    min_connections: 0,
+    default: None,
+  })
+}
+
+/// So far the generator handles value operators whose ports are all `f32`, with fixed inputs or
+/// one folded input. Their ports carry an audio signal or a parameter, whichever is connected.
+fn operator_port_spec(port: &PortEntry, fold: bool) -> Result<PortSpec> {
+  ensure!(
+    port.value_type == "f32",
+    "port '{}' has type '{}'; patches support value operators with f32 ports only yet",
+    port.name,
+    port.value_type
+  );
+  let arity = match (port.direction, port.min_connections, port.required) {
+    (PortDirection::Input, Some(_), _) => {
+      ensure!(fold, "port '{}' takes a list; patches support folded variadic inputs only yet", port.name);
+      Arity::Variadic
+    }
+    (PortDirection::Input, None, Some(false)) => Arity::Optional,
+    _ => Arity::Required,
+  };
+  Ok(PortSpec {
+    name: port.name.clone(),
+    kind: ValueKind::Number,
+    arity,
+    min_connections: port.min_connections.unwrap_or(0),
+    default: port.default.as_ref().and_then(|default| default.as_f64()).map(|default| default as f32),
+  })
 }
 
 #[cfg(test)]
@@ -322,12 +371,35 @@ mod tests {
     assert_eq!(envelope.outputs[0].kind, ValueKind::Signal);
 
     let gate = catalog.find("kahuna-std/midi-event-to-gate-parameter").expect("converter");
-    assert_eq!(gate.type_path, "kahuna_std::mapping::midi_event_to_gate_parameter::MidiEventToGateParameter");
+    assert_eq!(gate.type_path, "kahuna_std::converters::midi_event_to_gate_parameter::MidiEventToGateParameter");
     assert!(matches!(gate.call_style, CallStyle::Converter));
 
+    let multiply = catalog.find("kahuna-std/multiply").expect("value operator");
+    assert!(matches!(multiply.call_style, CallStyle::ValueOperator { fold: true }));
+    assert_eq!(multiply.inputs[0].kind, ValueKind::Number);
+    assert_eq!(multiply.inputs[0].arity, Arity::Variadic);
+    assert_eq!(multiply.inputs[0].min_connections, 2);
+    let scale_offset = catalog.find("kahuna-std/scale-offset").expect("value operator");
+    assert_eq!(scale_offset.inputs[1].default, Some(1.0));
+
+    // Units patches can't use yet stay out of the catalog, but are reported.
+    let unsupported = resolved
+      .unsupported_units
+      .iter()
+      .map(|report| report.split(':').next().unwrap())
+      .collect::<Vec<_>>();
+    assert_eq!(
+      unsupported,
+      [
+        "envelopes/gate-follower",
+        "kahuna-std/greater",
+        "kahuna-std/greater-or-equal",
+        "kahuna-std/less",
+        "kahuna-std/less-or-equal",
+        "kahuna-std/select",
+      ]
+    );
     assert!(catalog.find("envelopes/gate-follower").is_none());
-    assert_eq!(resolved.unsupported_units.len(), 1);
-    assert!(resolved.unsupported_units[0].starts_with("envelopes/gate-follower: "), "{:?}", resolved.unsupported_units);
   }
 
   #[test]
