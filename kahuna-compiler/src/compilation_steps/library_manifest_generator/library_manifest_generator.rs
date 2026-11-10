@@ -1,16 +1,20 @@
 //! Builds a unit library's manifest by reading its source with `syn`. Nothing is compiled.
 //!
 //! Starting at the library root, the scanner follows `mod` declarations the same way rustc
-//! does and collects every struct marked `#[kahuna_module]` or `#[kahuna_converter]`.
+//! does and collects every struct marked `#[kahuna_module]` or `#[kahuna_converter]`, and every
+//! function marked `#[kahuna_value_operator]`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{bail, eyre, Result, WrapErr};
-use kahuna_unit_syntax::{parse_unit, Direction, LiteralValue, PortConfiguration, UnitAttributes, UnitKind as DeclaredKind};
+use kahuna_unit_syntax::{
+  parse_unit, parse_value_operator, Direction, LiteralValue, PortConfiguration, UnitAttributes,
+  UnitKind as DeclaredKind,
+};
 use quote::ToTokens;
 use syn::ext::IdentExt;
-use syn::{Attribute, DeriveInput, Item, ItemStruct, Meta, Type, Visibility};
+use syn::{Attribute, DeriveInput, Ident, Item, ItemFn, ItemStruct, Meta, Type, Visibility};
 
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
   PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, LibraryManifest, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
@@ -31,9 +35,9 @@ pub fn to_json(manifest: &LibraryManifest) -> Result<String> {
 pub fn generate_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
   let library_root = library_root(crate_dir)?;
   let children_dir = library_root
-    .parent()
-    .expect("library root is a file inside the crate")
-    .to_path_buf();
+      .parent()
+      .expect("library root is a file inside the crate")
+      .to_path_buf();
 
   let mut scanner = Scanner { units: Vec::new() };
   scanner.scan_file(&library_root, &children_dir, &[], true)?;
@@ -49,14 +53,14 @@ pub fn generate_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
 fn library_root(crate_dir: &Path) -> Result<PathBuf> {
   let cargo_toml_path = crate_dir.join("Cargo.toml");
   let cargo_toml: toml::Table = fs::read_to_string(&cargo_toml_path)
-    .wrap_err_with(|| format!("Cannot read {}", cargo_toml_path.display()))?
-    .parse()
-    .wrap_err_with(|| format!("Cannot parse {}", cargo_toml_path.display()))?;
+      .wrap_err_with(|| format!("Cannot read {}", cargo_toml_path.display()))?
+      .parse()
+      .wrap_err_with(|| format!("Cannot parse {}", cargo_toml_path.display()))?;
 
   let configured_path = cargo_toml
-    .get("lib")
-    .and_then(|lib| lib.get("path"))
-    .and_then(|path| path.as_str());
+      .get("lib")
+      .and_then(|lib| lib.get("path"))
+      .and_then(|path| path.as_str());
   let library_root = crate_dir.join(configured_path.unwrap_or("src/lib.rs"));
 
   if !library_root.is_file() {
@@ -108,7 +112,15 @@ impl Scanner {
         }
         Item::Struct(item_struct) => {
           if let Some((marker, kind)) = find_marker(&item_struct.attrs) {
+            ensure_marker_fits(kind, ItemShape::Struct, &item_struct.ident, file)?;
             let unit = read_unit(item_struct, marker, kind, file, module_path, public)?;
+            self.units.push(unit);
+          }
+        }
+        Item::Fn(item_fn) => {
+          if let Some((marker, kind)) = find_marker(&item_fn.attrs) {
+            ensure_marker_fits(kind, ItemShape::Function, &item_fn.sig.ident, file)?;
+            let unit = read_value_operator(item_fn, marker, file, module_path, public)?;
             self.units.push(unit);
           }
         }
@@ -119,27 +131,6 @@ impl Scanner {
   }
 }
 
-/// Resolves `mod name;` to `name.rs` or `name/mod.rs`, as rustc does.
-fn module_file(module: &syn::ItemMod, file: &Path, children_dir: &Path, name: &str) -> Result<PathBuf> {
-  if module.attrs.iter().any(|attribute| attribute.path().is_ident("path")) {
-    bail!("{}: `#[path]` on modules is not supported (module `{name}`)", file.display());
-  }
-
-  let candidates = [children_dir.join(format!("{name}.rs")), children_dir.join(name).join("mod.rs")];
-  candidates
-    .iter()
-    .find(|candidate| candidate.is_file())
-    .cloned()
-    .ok_or_else(|| {
-      eyre!(
-        "{}: file for module `{name}` not found; looked for {} and {}",
-        file.display(),
-        candidates[0].display(),
-        candidates[1].display()
-      )
-    })
-}
-
 fn read_unit(
   item_struct: &ItemStruct,
   marker: &Attribute,
@@ -148,24 +139,10 @@ fn read_unit(
   module_path: &[String],
   public: bool,
 ) -> Result<UnitEntry> {
-  let rust_path = [module_path, &[item_struct.ident.unraw().to_string()]].concat().join("::");
+  let rust_path = rust_path_of(module_path, &item_struct.ident);
+  ensure_reachable(&rust_path, public && is_public(&item_struct.vis), file)?;
 
-  if !(public && is_public(&item_struct.vis)) {
-    bail!(
-      "{}: unit `{rust_path}` is not reachable from outside the crate; make it and all modules on its path `pub`",
-      file.display()
-    );
-  }
-
-  let attributes = match &marker.meta {
-    Meta::Path(_) => UnitAttributes::default(),
-    Meta::List(list) => UnitAttributes::parse(list.tokens.clone()).map_err(|error| located(file, error))?,
-    Meta::NameValue(_) => {
-      let marker = kind.marker();
-      bail!("{}: expected `#[{marker}]` or `#[{marker}(...)]`", file.display())
-    }
-  };
-
+  let attributes = parse_unit_attributes(marker, kind, file)?;
   let input = DeriveInput::from(item_struct.clone());
   let unit = parse_unit(kind, &input, &attributes).map_err(|error| located(file, error))?;
 
@@ -174,9 +151,37 @@ fn read_unit(
     kind: match kind {
       DeclaredKind::Module => UnitKind::Module,
       DeclaredKind::Converter => UnitKind::Converter,
+      DeclaredKind::ValueOperator => unreachable!("value operators are functions, see read_value_operator"),
     },
     rust_path,
+    type_parameters: vec![],
+    fold: false,
     ports: unit.ports.iter().map(port_entry).collect(),
+  })
+}
+
+/// A value operator is a plain function: every parameter is an input, the return value is `out`.
+/// With `fold`, the two operands become one input that accepts any number of connections.
+fn read_value_operator(
+  item_fn: &ItemFn,
+  marker: &Attribute,
+  file: &Path,
+  module_path: &[String],
+  public: bool,
+) -> Result<UnitEntry> {
+  let rust_path = rust_path_of(module_path, &item_fn.sig.ident);
+  ensure_reachable(&rust_path, public && is_public(&item_fn.vis), file)?;
+
+  let attributes = parse_unit_attributes(marker, DeclaredKind::ValueOperator, file)?;
+  let operator = parse_value_operator(item_fn, &attributes).map_err(|error| located(file, error))?;
+
+  Ok(UnitEntry {
+    id: operator.id,
+    kind: UnitKind::ValueOperator,
+    rust_path,
+    type_parameters: operator.type_parameters.iter().map(ToString::to_string).collect(),
+    fold: operator.fold,
+    ports: operator.ports.iter().map(value_operator_port_entry).collect(),
   })
 }
 
@@ -187,22 +192,50 @@ fn port_entry(port: &PortConfiguration) -> PortEntry {
       Direction::Output => PortDirection::Output,
     },
     name: port.identifier.unraw().to_string(),
-    stream_type: match port.stream_kind {
+    stream_type: Some(match port.stream_kind {
       kahuna_core::StreamKind::Signal => StreamType::Signal,
       kahuna_core::StreamKind::Parameter => StreamType::Parameter,
       kahuna_core::StreamKind::Event => StreamType::Event,
-    },
+    }),
     rate: port.rate().map(|rate| match rate {
       kahuna_core::Rate::AudioRate => Rate::Audio,
       kahuna_core::Rate::ControlRate => Rate::Control,
     }),
     value_type: value_type_name(&port.value_type),
+    min_connections: None,
     required: port.required(),
-    default: port.default_value.as_ref().map(|default| match default.literal {
-      LiteralValue::Bool(value) => serde_json::Value::from(value),
-      LiteralValue::Integer(value) => serde_json::Value::from(value),
-      LiteralValue::Float(value) => serde_json::Value::from(value),
-    }),
+    default: port.default_value.as_ref().map(|default| literal_json(default.literal)),
+    range: None,
+  }
+}
+
+/// Converts the complete declaration produced by `kahuna-unit-syntax` without re-deriving
+/// variadic, required, default, or range semantics here.
+fn value_operator_port_entry(
+  port: &kahuna_unit_syntax::model::declaration::operator_port::OperatorPort,
+) -> PortEntry {
+  PortEntry {
+    direction: match port.direction {
+      Direction::Input => PortDirection::Input,
+      Direction::Output => PortDirection::Output,
+    },
+    name: port.identifier.unraw().to_string(),
+    stream_type: None,
+    rate: None,
+    value_type: port.port_type.name(),
+    min_connections: port.min_connections,
+    required: (port.direction == Direction::Input && port.min_connections.is_none())
+      .then(|| port.default_value.is_none()),
+    default: port.default_value.as_ref().map(|default| literal_json(default.literal)),
+    range: port.range.map(|(low, high)| [low, high]),
+  }
+}
+
+fn literal_json(literal: LiteralValue) -> serde_json::Value {
+  match literal {
+    LiteralValue::Bool(value) => serde_json::Value::from(value),
+    LiteralValue::Integer(value) => serde_json::Value::from(value),
+    LiteralValue::Float(value) => serde_json::Value::from(value),
   }
 }
 
@@ -210,11 +243,11 @@ fn port_entry(port: &PortConfiguration) -> PortEntry {
 fn value_type_name(value_type: &Type) -> String {
   match value_type {
     Type::Path(type_path) if type_path.qself.is_none() => type_path
-      .path
-      .segments
-      .last()
-      .map(|segment| segment.to_token_stream().to_string().replace(' ', ""))
-      .unwrap_or_default(),
+        .path
+        .segments
+        .last()
+        .map(|segment| segment.to_token_stream().to_string().replace(' ', ""))
+        .unwrap_or_default(),
     _ => value_type.to_token_stream().to_string().replace(' ', ""),
   }
 }
@@ -233,6 +266,77 @@ fn check_unique_ids(units: &[UnitEntry]) -> Result<()> {
   Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemShape {
+  Struct,
+  Function,
+}
+
+/// Modules and converters are structs, value operators are functions.
+fn ensure_marker_fits(kind: DeclaredKind, shape: ItemShape, name: &Ident, file: &Path) -> Result<()> {
+  let marker = kind.marker();
+  match (kind, shape) {
+    (DeclaredKind::ValueOperator, ItemShape::Function) => Ok(()),
+    (DeclaredKind::ValueOperator, ItemShape::Struct) => {
+      bail!("{}: `#[{marker}]` applies to functions, but `{name}` is a struct", file.display())
+    }
+    (_, ItemShape::Struct) => Ok(()),
+    (_, ItemShape::Function) => {
+      bail!("{}: `#[{marker}]` applies to structs, but `{name}` is a function", file.display())
+    }
+  }
+}
+
+fn ensure_reachable(rust_path: &str, reachable: bool, file: &Path) -> Result<()> {
+  if !reachable {
+    bail!(
+      "{}: unit `{rust_path}` is not reachable from outside the crate; make it and all modules on its path `pub`",
+      file.display()
+    );
+  }
+  Ok(())
+}
+
+fn rust_path_of(module_path: &[String], name: &Ident) -> String {
+  [module_path, &[name.unraw().to_string()]].concat().join("::")
+}
+
+fn parse_unit_attributes(marker: &Attribute, kind: DeclaredKind, file: &Path) -> Result<UnitAttributes> {
+  match &marker.meta {
+    Meta::Path(_) => Ok(UnitAttributes::default()),
+    Meta::List(list) => UnitAttributes::parse(list.tokens.clone()).map_err(|error| located(file, error)),
+    Meta::NameValue(_) => {
+      let marker = kind.marker();
+      bail!("{}: expected `#[{marker}]` or `#[{marker}(...)]`", file.display())
+    }
+  }
+}
+
+/// Resolves `mod name;` to `name.rs` or `name/mod.rs`, as rustc does.
+fn module_file(module: &syn::ItemMod, file: &Path, children_dir: &Path, name: &str) -> Result<PathBuf> {
+  if module.attrs.iter().any(|attribute| attribute.path().is_ident("path")) {
+    bail!("{}: `#[path]` on modules is not supported (module `{name}`)", file.display());
+  }
+
+  let candidates = [children_dir.join(format!("{name}.rs")), children_dir.join(name).join("mod.rs")];
+  candidates
+      .iter()
+      .find(|candidate| candidate.is_file())
+      .cloned()
+      .ok_or_else(|| {
+        eyre!(
+        "{}: file for module `{name}` not found; looked for {} and {}",
+        file.display(),
+        candidates[0].display(),
+        candidates[1].display()
+      )
+      })
+}
+
 fn find_marker(attributes: &[Attribute]) -> Option<(&Attribute, DeclaredKind)> {
   attributes.iter().find_map(|attribute| {
     let segment = attribute.path().segments.last()?;
@@ -243,7 +347,7 @@ fn find_marker(attributes: &[Attribute]) -> Option<(&Attribute, DeclaredKind)> {
 fn is_test_only(attributes: &[Attribute]) -> bool {
   attributes.iter().any(|attribute| {
     attribute.path().is_ident("cfg")
-      && matches!(&attribute.meta, Meta::List(list) if list.tokens.to_string() == "test")
+        && matches!(&attribute.meta, Meta::List(list) if list.tokens.to_string() == "test")
   })
 }
 
@@ -315,6 +419,109 @@ mod tests {
     assert_eq!(manifest.units[0].kind, UnitKind::Converter);
     assert_eq!(manifest.units[0].id, "to-gate");
     assert_eq!(manifest.units[0].ports.len(), 2);
+  }
+
+  #[test]
+  fn reads_folded_value_operators() {
+    let crate_dir = temporary_crate(
+      "value-operator-fold",
+      &[(
+        "src/lib.rs",
+        "#[kahuna_value_operator(fold = \"in\")] pub fn multiply(a: f32, b: f32) -> f32 { a * b }",
+      )],
+    );
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+    let unit = &manifest.units[0];
+
+    assert_eq!(unit.kind, UnitKind::ValueOperator);
+    assert_eq!(unit.id, "multiply");
+    assert_eq!(unit.rust_path, "multiply");
+    assert!(unit.fold);
+    assert_eq!(unit.ports.len(), 2);
+    assert_eq!(unit.ports[0].name, "in");
+    assert_eq!(unit.ports[0].min_connections, Some(2));
+    assert_eq!(unit.ports[1].name, "out");
+    assert_eq!(unit.ports[1].direction, PortDirection::Output);
+  }
+
+  #[test]
+  fn reads_value_operators_without_fold_as_one_input_per_parameter() {
+    let crate_dir = temporary_crate(
+      "value-operator-plain",
+      &[(
+        "src/lib.rs",
+        "#[kahuna_value_operator] pub fn subtract(a: f32, b: f32) -> f32 { a - b }",
+      )],
+    );
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+    let unit = &manifest.units[0];
+
+    assert!(!unit.fold);
+    assert_eq!(unit.ports.iter().map(|port| port.name.as_str()).collect::<Vec<_>>(), ["a", "b", "out"]);
+    assert!(unit.ports.iter().all(|port| port.stream_type.is_none() && port.min_connections.is_none()));
+  }
+
+  #[test]
+  fn preserves_value_operator_declaration_metadata() {
+    let crate_dir = temporary_crate(
+      "value-operator-metadata",
+      &[(
+        "src/lib.rs",
+        "#[kahuna_value_operator] pub fn select<T: Copy>(#[input(default = 0.5, range = 0.0..=1.0)] position: f32, #[input(min = 3)] inputs: &[T]) -> T { inputs[0] }",
+      )],
+    );
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+    let unit = &manifest.units[0];
+
+    assert_eq!(unit.type_parameters, ["T"]);
+    assert_eq!(unit.ports[0].required, Some(false));
+    assert_eq!(unit.ports[0].default, Some(serde_json::Value::from(0.5)));
+    assert_eq!(unit.ports[0].range, Some([0.0, 1.0]));
+    assert_eq!(unit.ports[1].min_connections, Some(3));
+    assert_eq!(unit.ports[1].required, None);
+    assert_eq!(unit.ports[2].value_type, "T");
+  }
+
+  #[test]
+  fn rejects_value_operator_marker_on_structs() {
+    let crate_dir = temporary_crate(
+      "value-operator-on-struct",
+      &[("src/lib.rs", "#[kahuna_value_operator] pub struct Multiply { #[output] out: Audio }")],
+    );
+
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
+
+    assert!(format!("{error}").contains("applies to functions"), "{error}");
+  }
+
+  #[test]
+  fn rejects_module_marker_on_functions() {
+    let crate_dir = temporary_crate(
+      "module-on-function",
+      &[("src/lib.rs", "#[kahuna_module] pub fn osc() {}")],
+    );
+
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
+
+    assert!(format!("{error}").contains("applies to structs"), "{error}");
+  }
+
+  #[test]
+  fn rejects_value_operators_in_private_modules() {
+    let crate_dir = temporary_crate(
+      "private-value-operator",
+      &[
+        ("src/lib.rs", "mod hidden;"),
+        ("src/hidden.rs", "#[kahuna_value_operator] pub fn add(a: f32, b: f32) -> f32 { a + b }"),
+      ],
+    );
+
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
+
+    assert!(format!("{error}").contains("`hidden::add` is not reachable"), "{error}");
   }
 
   #[test]

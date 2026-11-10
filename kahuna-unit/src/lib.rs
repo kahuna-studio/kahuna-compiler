@@ -15,7 +15,7 @@ struct GeneratedPort {
 
 #[proc_macro_attribute]
 pub fn kahuna_module(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    match expand(attribute.into(), item.into()) {
+    match expand_module(attribute.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -37,7 +37,7 @@ pub fn kahuna_value_operator(attribute: TokenStream, item: TokenStream) -> Token
     }
 }
 
-fn expand(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+fn expand_module(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
     let attributes = UnitAttributes::parse(attribute)?;
     let input: DeriveInput = syn::parse2(item)?;
     let struct_name = &input.ident;

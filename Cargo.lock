@@ -737,7 +737,6 @@ dependencies = [
  "kahuna-core",
  "kahuna-runtime",
  "kahuna-std",
- "kahuna-unit",
 ]
 
 [[package]]

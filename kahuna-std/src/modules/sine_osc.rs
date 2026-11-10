@@ -1,6 +1,6 @@
 use kahuna_core::ModuleEnv;
 use kahuna_unit::kahuna_module;
-use kahuna_std::phase_generators::AudioRatePhase;
+use crate::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
 
 #[kahuna_module]

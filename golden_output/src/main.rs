@@ -1,4 +1,3 @@
-mod modules;
 mod patch;
 
 use kahuna_runtime::run_standalone;

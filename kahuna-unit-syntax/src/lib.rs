@@ -7,136 +7,19 @@
 
 use heck::ToKebabCase;
 use kahuna_core::{Rate, StreamKind};
-use proc_macro2::TokenStream;
-use syn::parse::{ParseStream, Parser};
-use syn::{Data, DeriveInput, Expr, Field, Fields, GenericArgument, Ident, Lit, LitStr, PathArguments, Type, UnOp};
+use syn::parse::ParseStream;
+use syn::{Data, DeriveInput, Expr, Field, Fields, GenericArgument, Ident, Lit, PathArguments, Type, UnOp};
 
 mod operator;
+pub mod model;
 
-pub use operator::{parse_value_operator, strip_input_attributes, OperatorDeclaration, OperatorPort, OperatorPortType};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
-    Input,
-    Output,
-}
-
-pub struct PortConfiguration {
-    pub direction: Direction,
-    pub identifier: Ident,
-    pub stream_kind: StreamKind,
-    pub rate_by_type: Option<Rate>,
-    pub rate_override: Option<Rate>,
-    pub default_value: Option<DefaultValue>,
-    pub value_type: Type,
-}
-
-impl PortConfiguration {
-    pub fn rate(&self) -> Option<Rate> {
-        self.rate_override.or(self.rate_by_type)
-    }
-
-    /// `None` for outputs, where the concept doesn't apply.
-    pub fn required(&self) -> Option<bool> {
-        match (self.direction, self.stream_kind) {
-            (Direction::Output, _) => None,
-            (Direction::Input, StreamKind::Parameter) => Some(self.default_value.is_none()),
-            (Direction::Input, StreamKind::Signal) => Some(true),
-            (Direction::Input, StreamKind::Event) => Some(false),
-        }
-    }
-}
-
-/// A `default = ...` value. Only literals are allowed, so tools that read the source without
-/// compiling it see exactly the value the compiled module uses.
-pub struct DefaultValue {
-    pub expression: Expr,
-    pub literal: LiteralValue,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LiteralValue {
-    Bool(bool),
-    Integer(i64),
-    Float(f64),
-}
-
-/// The arguments of a unit's attribute, e.g. `#[kahuna_module(id = "...")]`.
-#[derive(Default)]
-pub struct UnitAttributes {
-    pub id: Option<LitStr>,
-    /// Value operators only: the name of the variadic port the function is folded over.
-    pub fold: Option<LitStr>,
-}
-
-impl UnitAttributes {
-    pub fn parse(tokens: TokenStream) -> syn::Result<Self> {
-        let mut attributes = UnitAttributes::default();
-        let parser = syn::meta::parser(|meta| {
-            if meta.path.is_ident("id") {
-                let id: LitStr = meta.value()?.parse()?;
-                if !is_valid_unit_id(&id.value()) {
-                    return Err(syn::Error::new_spanned(
-                        &id,
-                        "unit ids must be kebab-case: lowercase letters, digits, and single hyphens",
-                    ));
-                }
-                attributes.id = Some(id);
-                Ok(())
-            } else if meta.path.is_ident("fold") {
-                attributes.fold = Some(meta.value()?.parse()?);
-                Ok(())
-            } else {
-                Err(meta.error("unknown key; expected `id` or `fold`"))
-            }
-        });
-        parser.parse2(tokens)?;
-        Ok(attributes)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnitKind {
-    Module,
-    Converter,
-    ValueOperator,
-}
-
-impl UnitKind {
-    const ALL: [UnitKind; 3] = [UnitKind::Module, UnitKind::Converter, UnitKind::ValueOperator];
-
-    /// The attribute that marks a struct (modules, converters) or a function (operators) as this kind of unit.
-    pub fn marker(self) -> &'static str {
-        match self {
-            UnitKind::Module => "kahuna_module",
-            UnitKind::Converter => "kahuna_converter",
-            UnitKind::ValueOperator => "kahuna_value_operator",
-        }
-    }
-
-    pub fn from_marker(marker: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.marker() == marker)
-    }
-
-    /// Operators are declared as functions, all other units as structs.
-    pub fn is_operator(self) -> bool {
-        self == UnitKind::ValueOperator
-    }
-}
-
-pub struct UnitDeclaration<'a> {
-    pub kind: UnitKind,
-    pub id: String,
-    pub state_fields: Vec<&'a Field>,
-    /// In declaration order. A converter has exactly one input and one output.
-    pub ports: Vec<PortConfiguration>,
-}
-
-impl UnitDeclaration<'_> {
-    pub fn ports(&self, direction: Direction) -> impl Iterator<Item = &PortConfiguration> {
-        self.ports.iter().filter(move |port| port.direction == direction)
-    }
-}
+pub use operator::{parse_value_operator, strip_input_attributes};
+pub use crate::model::declaration::literal::{DefaultValue, LiteralValue};
+pub use crate::model::declaration::port_configuration::Direction as Direction;
+pub use crate::model::declaration::port_configuration::PortConfiguration as PortConfiguration;
+pub use crate::model::declaration::unit_declaration::UnitDeclaration as UnitDeclaration;
+pub use crate::model::declaration::unit_kind::UnitKind as UnitKind;
+pub use crate::model::syntax::unit_attributes::UnitAttributes as UnitAttributes;
 
 pub fn parse_unit<'a>(kind: UnitKind, input: &'a DeriveInput, attributes: &UnitAttributes) -> syn::Result<UnitDeclaration<'a>> {
     let marker = kind.marker();

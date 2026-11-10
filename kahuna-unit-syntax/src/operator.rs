@@ -8,7 +8,9 @@ use syn::{
     Attribute, Expr, FnArg, GenericParam, Ident, ItemFn, LitStr, Pat, PatType, ReturnType, Type, TypeReference,
 };
 
-use crate::{literal_value, Direction, DefaultValue, LiteralValue, UnitAttributes, UnitKind};
+pub(crate) use crate::model::declaration::operator_declaration::OperatorDeclaration;
+pub(crate) use crate::model::declaration::operator_port::{OperatorPort, OperatorPortType};
+use crate::{Direction, LiteralValue, UnitAttributes, UnitKind, literal_value};
 
 /// The name of a value operator's output port.
 pub const OUTPUT_PORT: &str = "out";
@@ -17,46 +19,6 @@ pub const OUTPUT_PORT: &str = "out";
 const FOLD_MIN_CONNECTIONS: usize = 2;
 
 const SUPPORTED_TYPES: &str = "f32, bool, a type parameter of the function, or a slice `&[_]` of these";
-
-pub struct OperatorDeclaration {
-    pub kind: UnitKind,
-    pub id: String,
-    /// Each one ties together all ports of that type: whatever is connected must match.
-    pub type_parameters: Vec<Ident>,
-    /// The inputs in declaration order, then the output.
-    pub ports: Vec<OperatorPort>,
-    /// The function takes two values and is applied pairwise over all connections of its one input.
-    pub fold: bool,
-}
-
-pub struct OperatorPort {
-    pub direction: Direction,
-    pub identifier: Ident,
-    pub port_type: OperatorPortType,
-    /// `Some` for variadic inputs (a slice parameter, or the folded port): how many connections it needs at least.
-    pub min_connections: Option<usize>,
-    pub default_value: Option<DefaultValue>,
-    /// A hint for the UI, e.g. for drawing a knob; values outside are still valid.
-    pub range: Option<(f64, f64)>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperatorPortType {
-    Number,
-    Bool,
-    Variable(Ident),
-}
-
-impl OperatorPortType {
-    /// The name used in manifests, e.g. `f32` or `T`.
-    pub fn name(&self) -> String {
-        match self {
-            OperatorPortType::Number => "f32".to_string(),
-            OperatorPortType::Bool => "bool".to_string(),
-            OperatorPortType::Variable(identifier) => identifier.to_string(),
-        }
-    }
-}
 
 pub fn parse_value_operator(function: &ItemFn, attributes: &UnitAttributes) -> syn::Result<OperatorDeclaration> {
     let signature = &function.sig;

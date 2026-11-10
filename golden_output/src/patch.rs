@@ -1,5 +1,3 @@
-use crate::modules::adsr_envelope::AdsrEnvelope;
-use crate::modules::sine_osc::SineOsc;
 use kahuna_core::io_nodes::{AudioOutputNode, IoNodeFactory, MidiInputNode};
 use kahuna_core::midi::MidiEvent;
 use kahuna_core::midi::polyphony::poly_buffer::PolyBuffer;
@@ -8,6 +6,8 @@ use kahuna_core::patch::KahunaPatch;
 use kahuna_core::{KahunaConverter, KahunaModule, ModuleEnv};
 use kahuna_std::converters::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter;
 use kahuna_std::converters::midi_event_to_gate_parameter::MidiEventToGateParameter;
+use kahuna_std::modules::adsr_envelope::AdsrEnvelope;
+use kahuna_std::modules::sine_osc::SineOsc;
 
 #[allow(non_snake_case)]
 pub struct PatchState {
@@ -80,7 +80,6 @@ impl Patch {
             poly_0__adsr_envelope_0: (0..poly_0_voices)
                 .map(|_| AdsrEnvelope::new(&env))
                 .collect(),
-
 
             audio_out_0: factory.create_audio_out(),
 

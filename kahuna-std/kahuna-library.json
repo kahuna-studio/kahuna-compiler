@@ -44,6 +44,86 @@
       ]
     },
     {
+      "id": "adsr-envelope",
+      "kind": "module",
+      "rust_path": "modules::adsr_envelope::AdsrEnvelope",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "gate",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "bool",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "attack",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.01
+        },
+        {
+          "direction": "input",
+          "name": "decay",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.1
+        },
+        {
+          "direction": "input",
+          "name": "sustain",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.7
+        },
+        {
+          "direction": "input",
+          "name": "release",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 0.2
+        },
+        {
+          "direction": "output",
+          "name": "envelope",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Unipolar"
+        }
+      ]
+    },
+    {
+      "id": "sine-osc",
+      "kind": "module",
+      "rust_path": "modules::sine_osc::SineOsc",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "frequency",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": true
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
       "id": "multiply",
       "kind": "value-operator",
       "rust_path": "value_operators::arithmetic::multiply",
