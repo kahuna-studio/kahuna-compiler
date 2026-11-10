@@ -62,6 +62,9 @@ library is listed in `instrument.toml` under `[libraries]`, written like a Cargo
 `git`). A patch can reference units from any mix of these as `{library}/{unit id}`, e.g. `kahuna-std/adsr-envelope`,
 or `self/sine-osc` for the instrument's own library.
 
+Currently `[libraries]` is not supported yet: the compiler rejects it. Every instrument gets `kahuna-std` as an
+implicit dependency, without listing it, next to its own `units/` if present.
+
 ## Compiling an instrument
 
 Kahuna's compiler is a CLI tool, installed separately from any one instrument. Compiling one looks like:
