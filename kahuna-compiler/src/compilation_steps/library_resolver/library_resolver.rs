@@ -2,6 +2,10 @@
 //!
 //! The compiler writes the generated `{instrument}` crate's Cargo.toml with every library as a
 //! dependency, then asks `cargo metadata` where Cargo put each of them. Nothing is compiled.
+//!
+//! For now an instrument has two sources of units: `kahuna-std`, which every instrument gets without
+//! listing it, and the instrument's own library in `units/`, if it has one. `[libraries]` in
+//! instrument.toml is rejected until other libraries are supported.
 
 use std::collections::HashMap;
 use std::fs;
@@ -23,14 +27,18 @@ pub const GENERATED_DIR: &str = ".kahuna";
 /// The instrument's own library, found automatically.
 const OWN_LIBRARY_DIR: &str = "units";
 
+/// The standard library: a sibling of this crate in the toolchain repository, and a dependency of
+/// every generated crate. It is both the crate name and what patches write before the slash.
+const STD_LIBRARY: &str = "kahuna-std";
+
 /// A unit library as the generated crate depends on it.
 #[derive(Debug, Clone, PartialEq)]
 struct LibraryDependency {
-  /// What patches write before the slash: the key from `[libraries]`, or `self`.
+  /// What patches write before the slash: `kahuna-std`, or `self` for the instrument's own library.
   reference: String,
   /// The dependency key in the generated Cargo.toml.
   key: String,
-  /// The Cargo dependency specification, with relative paths made absolute.
+  /// The Cargo dependency specification, with absolute paths.
   specification: toml::Value,
 }
 
@@ -78,49 +86,43 @@ pub fn resolve_libraries(instrument_dir: &Path, metadata: &InstrumentMetadata, o
 }
 
 fn library_dependencies(instrument_dir: &Path, metadata: &InstrumentMetadata) -> Result<Vec<LibraryDependency>> {
-  let mut dependencies = metadata
-    .libraries
-    .iter()
-    .map(|(key, specification)| {
-      Ok(LibraryDependency {
-        reference: key.clone(),
-        key: key.clone(),
-        specification: with_absolute_path(specification, instrument_dir)
-          .wrap_err_with(|| format!("[libraries] entry '{key}'"))?,
-      })
-    })
-    .collect::<Result<Vec<_>>>()?;
+  ensure!(
+    metadata.libraries.is_empty(),
+    "[libraries] in instrument.toml is not supported yet (found: {}); remove it. \
+     Every instrument can use the units of {STD_LIBRARY} as `{STD_LIBRARY}/{{unit id}}`",
+    metadata.libraries.keys().cloned().collect::<Vec<_>>().join(", ")
+  );
 
-  let self_units_dir = instrument_dir.join(OWN_LIBRARY_DIR);
-  if self_units_dir.join("Cargo.toml").is_file() {
+  let mut dependencies = vec![path_dependency(STD_LIBRARY, STD_LIBRARY, &std_library_dir())?];
+
+  let own_units_dir = instrument_dir.join(OWN_LIBRARY_DIR);
+  if own_units_dir.join("Cargo.toml").is_file() {
     // Read fresh every time, so renaming the crate never breaks a patch.
-    let key = package_name(&self_units_dir)?;
+    let key = package_name(&own_units_dir)?;
     ensure!(
-      !metadata.libraries.contains_key(&key),
-      "[libraries] lists '{key}', which is the instrument's own library in {OWN_LIBRARY_DIR}/; remove it from [libraries]"
+      key != STD_LIBRARY,
+      "The instrument's own library in {OWN_LIBRARY_DIR}/ is named '{STD_LIBRARY}', which is the standard library; rename its package"
     );
-    let path = absolute(&self_units_dir)?;
-    dependencies.push(LibraryDependency {
-      reference: SELF_LIBRARY.to_string(),
-      key,
-      specification: toml::Value::Table(toml::Table::from_iter([("path".to_string(), path.into())])),
-    });
+    dependencies.push(path_dependency(SELF_LIBRARY, &key, &own_units_dir)?);
   }
 
   Ok(dependencies)
 }
 
-/// Relative `path`s in `[libraries]` are relative to the instrument directory; the generated crate
-/// lives elsewhere, so they are made absolute.
-fn with_absolute_path(specification: &toml::Value, instrument_dir: &Path) -> Result<toml::Value> {
-  let mut specification = specification.clone();
-  if let Some(table) = specification.as_table_mut()
-    && let Some(path) = table.get("path").and_then(|path| path.as_str())
-  {
-    let path = absolute(&instrument_dir.join(path))?;
-    table.insert("path".to_string(), path.into());
-  }
-  Ok(specification)
+/// Until the compiler is installed separately from the toolchain repository, `kahuna-std` is found
+/// next to the compiler's own crate.
+fn std_library_dir() -> PathBuf {
+  Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(STD_LIBRARY)
+}
+
+/// The generated crate lives elsewhere, so the path to the library is made absolute.
+fn path_dependency(reference: &str, key: &str, directory: &Path) -> Result<LibraryDependency> {
+  let path = absolute(directory)?;
+  Ok(LibraryDependency {
+    reference: reference.to_string(),
+    key: key.to_string(),
+    specification: toml::Value::Table(toml::Table::from_iter([("path".to_string(), path.into())])),
+  })
 }
 
 fn absolute(path: &Path) -> Result<String> {
@@ -348,24 +350,54 @@ mod tests {
     InstrumentMetadata::from_str(&fs::read_to_string(instrument_dir.join("instrument.toml")).unwrap()).unwrap()
   }
 
-  fn output_dir(name: &str) -> PathBuf {
+  fn scratch_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kahuna-library-resolver-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     dir
   }
 
+  /// An instrument directory holding only `instrument.toml` and the given files.
+  fn instrument_with_files(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let dir = scratch_dir(&format!("{name}-instrument"));
+    let instrument_toml = "name = \"bare-synth\"\nvendor = \"Kahuna Studio\"\nversion = \"0.1.0\"\n";
+    for (path, contents) in [("instrument.toml", instrument_toml)].into_iter().chain(files.iter().copied()) {
+      fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+      fs::write(dir.join(path), contents).unwrap();
+    }
+    dir
+  }
+
   #[test]
-  fn finds_own_and_listed_units() {
+  fn instrument_without_libraries_gets_the_std_units() {
+    let instrument_dir = instrument_with_files("bare", &[]);
+
+    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("bare")).unwrap();
+    let catalog = &resolved.catalog;
+
+    for unit in [
+      "kahuna-std/sine-osc",
+      "kahuna-std/adsr-envelope",
+      "kahuna-std/multiply",
+      "kahuna-std/midi-event-to-frequency-parameter",
+      "kahuna-std/midi-event-to-gate-parameter",
+    ] {
+      assert!(catalog.find(unit).is_some(), "{unit} is missing from the catalog");
+    }
+    assert!(catalog.find("self/sine-osc").is_none(), "no units/ directory, so no own units");
+  }
+
+  #[test]
+  fn finds_std_and_own_units() {
     let instrument_dir = fixture_instrument();
 
-    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &output_dir("found")).unwrap();
+    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("found")).unwrap();
     let catalog = &resolved.catalog;
 
     let sine = catalog.find("self/sine-osc").expect("own unit");
     assert_eq!(sine.type_path, "test_synth_units::oscillators::SineOsc");
 
-    let envelope = catalog.find("envelopes/adsr-envelope").expect("listed unit");
-    assert_eq!(envelope.type_path, "envelopes::envelopes::adsr_envelope::AdsrEnvelope");
+    let envelope = catalog.find("kahuna-std/adsr-envelope").expect("std module");
+    assert_eq!(envelope.type_path, "kahuna_std::modules::adsr_envelope::AdsrEnvelope");
     assert_eq!(envelope.inputs[0].arity, Arity::Required);
     assert_eq!(envelope.inputs[1].arity, Arity::Optional);
     assert_eq!(envelope.outputs[0].kind, ValueKind::Signal);
@@ -381,8 +413,14 @@ mod tests {
     assert_eq!(multiply.inputs[0].min_connections, 2);
     let scale_offset = catalog.find("kahuna-std/scale-offset").expect("value operator");
     assert_eq!(scale_offset.inputs[1].default, Some(1.0));
+  }
 
-    // Units patches can't use yet stay out of the catalog, but are reported.
+  #[test]
+  fn reports_units_patches_cannot_use_yet_as_warnings() {
+    let instrument_dir = instrument_with_files("unsupported", &[]);
+
+    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("unsupported")).unwrap();
+
     let unsupported = resolved
       .unsupported_units
       .iter()
@@ -391,7 +429,6 @@ mod tests {
     assert_eq!(
       unsupported,
       [
-        "envelopes/gate-follower",
         "kahuna-std/greater",
         "kahuna-std/greater-or-equal",
         "kahuna-std/less",
@@ -399,36 +436,68 @@ mod tests {
         "kahuna-std/select",
       ]
     );
-    assert!(catalog.find("envelopes/gate-follower").is_none());
+    assert!(resolved.catalog.find("kahuna-std/select").is_none());
   }
 
   #[test]
   fn writes_generated_crate_with_absolute_paths_in_its_own_workspace() {
     let instrument_dir = fixture_instrument();
-    let output_dir = output_dir("generated");
+    let output_dir = scratch_dir("generated");
 
     resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &output_dir).unwrap();
 
     let cargo_toml: toml::Table = fs::read_to_string(output_dir.join("test-synth/Cargo.toml")).unwrap().parse().unwrap();
     assert!(cargo_toml.contains_key("workspace"));
+    let std_path = cargo_toml["dependencies"][STD_LIBRARY]["path"].as_str().unwrap();
+    assert_eq!(Path::new(std_path), std_library_dir().canonicalize().unwrap());
     let units_path = cargo_toml["dependencies"]["test-synth-units"]["path"].as_str().unwrap();
     assert_eq!(Path::new(units_path), instrument_dir.join("units").canonicalize().unwrap());
   }
 
   #[test]
-  fn reports_libraries_without_manifest() {
+  fn rejects_libraries_before_writing_anything() {
     let instrument_dir = fixture_instrument();
+    let output_dir = scratch_dir("rejected");
     let mut metadata = metadata(&instrument_dir);
-    let crate_without_manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../kahuna-core");
     metadata.libraries.insert(
-      "kahuna-core".to_string(),
-      toml::Value::Table(toml::Table::from_iter([(
-        "path".to_string(),
-        crate_without_manifest.to_string_lossy().into_owned().into(),
-      )])),
+      "envelopes".to_string(),
+      toml::Value::Table(toml::Table::from_iter([("path".to_string(), "../envelopes".into())])),
     );
 
-    let error = resolve_libraries(&instrument_dir, &metadata, &output_dir("missing")).unwrap_err();
+    let error = resolve_libraries(&instrument_dir, &metadata, &output_dir).unwrap_err();
+
+    let message = format!("{error}");
+    assert!(message.contains("[libraries]") && message.contains("not supported yet"), "{message}");
+    assert!(message.contains("envelopes"), "{message}");
+    assert!(!output_dir.exists(), "nothing is generated for an invalid instrument");
+  }
+
+  #[test]
+  fn rejects_own_library_named_like_the_std_library() {
+    let instrument_dir = instrument_with_files(
+      "std-name",
+      &[
+        ("units/Cargo.toml", "[package]\nname = \"kahuna-std\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
+        ("units/src/lib.rs", ""),
+      ],
+    );
+
+    let error = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("std-name")).unwrap_err();
+
+    assert!(format!("{error}").contains("standard library"), "{error}");
+  }
+
+  #[test]
+  fn reports_own_library_without_manifest() {
+    let instrument_dir = instrument_with_files(
+      "no-manifest",
+      &[
+        ("units/Cargo.toml", "[package]\nname = \"bare-units\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
+        ("units/src/lib.rs", ""),
+      ],
+    );
+
+    let error = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("no-manifest")).unwrap_err();
 
     assert!(format!("{error}").contains("kahuna-library.json not found"), "{error}");
   }

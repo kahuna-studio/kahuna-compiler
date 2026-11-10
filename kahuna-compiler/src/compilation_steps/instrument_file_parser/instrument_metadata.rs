@@ -98,6 +98,7 @@ version = "0.1.0"
         assert_eq!(metadata.name, "my-synth");
         assert_eq!(metadata.vendor, "My Company");
         assert_eq!(metadata.version, "0.1.0");
+        assert!(metadata.libraries.is_empty(), "[libraries] is optional");
     }
 
     #[test]
