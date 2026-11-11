@@ -2,7 +2,7 @@
   "format_version": 1,
   "units": [
     {
-      "id": "midi-event-to-frequency-parameter",
+      "id": "to-freq",
       "kind": "converter",
       "rust_path": "converters::midi_event_to_frequency_parameter::MidiEventToFrequencyParameter",
       "ports": [
@@ -23,7 +23,7 @@
       ]
     },
     {
-      "id": "midi-event-to-gate-parameter",
+      "id": "to-gate",
       "kind": "converter",
       "rust_path": "converters::midi_event_to_gate_parameter::MidiEventToGateParameter",
       "ports": [
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "id": "adsr-envelope",
+      "id": "adsr",
       "kind": "module",
       "rust_path": "modules::adsr_envelope::AdsrEnvelope",
       "ports": [
@@ -102,7 +102,7 @@
       ]
     },
     {
-      "id": "sine-osc",
+      "id": "sine",
       "kind": "module",
       "rust_path": "modules::sine_osc::SineOsc",
       "ports": [

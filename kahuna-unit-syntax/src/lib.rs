@@ -47,10 +47,7 @@ pub fn parse_unit<'a>(kind: UnitKind, input: &'a DeriveInput, attributes: &UnitA
         validate_converter_ports(input, &ports)?;
     }
 
-    let id = match &attributes.id {
-        Some(id) => id.value(),
-        None => default_unit_id(&input.ident),
-    };
+    let id = unit_id(attributes, &input.ident)?;
 
     Ok(UnitDeclaration { kind, id, state_fields, ports })
 }
@@ -76,8 +73,28 @@ pub fn default_unit_id(struct_name: &Ident) -> String {
     struct_name.to_string().to_kebab_case()
 }
 
-fn is_valid_unit_id(id: &str) -> bool {
-    !id.is_empty()
+/// The explicit id if there is one, else the default; either way it must be a valid id.
+pub(crate) fn unit_id(attributes: &UnitAttributes, name: &Ident) -> syn::Result<String> {
+    match &attributes.id {
+        Some(id) => Ok(id.value()),
+        None => {
+            let id = default_unit_id(name);
+            if is_valid_unit_id(&id) {
+                Ok(id)
+            } else {
+                Err(syn::Error::new_spanned(
+                    name,
+                    format!("`{id}`, the id derived from this name, is not valid; set one with `id = \"...\"`"),
+                ))
+            }
+        }
+    }
+}
+
+/// `[a-z][a-z0-9]*(-[a-z0-9]+)*`: units are short names in patches (`kahuna-std/to-freq`), and the
+/// IDE builds node ids from them (`to-freq_0`).
+pub fn is_valid_unit_id(id: &str) -> bool {
+    id.chars().next().is_some_and(|first| first.is_ascii_lowercase())
       && id.split('-').all(|part| {
           !part.is_empty() && part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
       })
@@ -261,11 +278,26 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ids_that_are_not_kebab_case() {
-        for id in ["Sine", "sine_osc", "-sine", "sine--osc", ""] {
+    fn accepts_ids_that_match_the_pattern() {
+        for id in ["a", "adsr", "to-freq", "osc2", "a-1", "x1-y2-z3"] {
             let tokens = format!("id = \"{id}\"").parse().unwrap();
-            assert!(UnitAttributes::parse(tokens).is_err(), "{id} should be rejected");
+            assert!(UnitAttributes::parse(tokens).is_ok(), "{id} should be accepted");
         }
+    }
+
+    #[test]
+    fn rejects_ids_that_do_not_match_the_pattern() {
+        for id in ["Sine", "sine_osc", "-sine", "sine-", "sine--osc", "", "1osc", "2-osc", "a b"] {
+            let tokens = format!("id = \"{id}\"").parse().unwrap();
+            assert!(UnitAttributes::parse(tokens).is_err(), "{id:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn rejects_a_derived_id_that_is_not_valid() {
+        let input = parse_struct("struct _1Osc {}");
+        let error = parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).err().expect("invalid id");
+        assert!(error.to_string().contains("set one with `id"), "{error}");
     }
 
     #[test]

@@ -2,7 +2,7 @@ use kahuna_core::midi::MidiEvent;
 use kahuna_core::ModuleEnv;
 use kahuna_unit::kahuna_converter;
 
-#[kahuna_converter]
+#[kahuna_converter(id = "to-gate")]
 pub struct MidiEventToGateParameter {
     active_notes: Vec<u8>,
 

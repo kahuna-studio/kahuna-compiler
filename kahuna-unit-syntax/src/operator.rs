@@ -58,10 +58,7 @@ pub fn parse_value_operator(function: &ItemFn, attributes: &UnitAttributes) -> s
         range: None,
     });
 
-    let id = match &attributes.id {
-        Some(id) => id.value(),
-        None => crate::default_unit_id(&signature.ident),
-    };
+    let id = crate::unit_id(attributes, &signature.ident)?;
 
     Ok(OperatorDeclaration {
         kind: UnitKind::ValueOperator,

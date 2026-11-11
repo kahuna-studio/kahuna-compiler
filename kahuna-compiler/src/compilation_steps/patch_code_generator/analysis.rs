@@ -1,5 +1,5 @@
 use eyre::{bail, ensure, eyre, Result, WrapErr};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, UnitCatalog, UnitSpec, ValueKind};
 use crate::compilation_steps::patch_file_parser::patch_graph::{Edge, Node, PatchGraph};
 
@@ -82,7 +82,7 @@ impl AnalyzedPatch {
 }
 
 pub fn analyze(graph: &PatchGraph, catalog: &dyn UnitCatalog) -> Result<AnalyzedPatch> {
-  validate_unique_ids(graph)?;
+  validate_node_ids(graph)?;
   validate_edge_endpoints(graph)?;
 
   let nodes = topological_order(graph)?
@@ -412,12 +412,34 @@ fn resolve_source(edge: &Edge, analyzed: &[AnalyzedNode]) -> Result<BufferRef> {
     .ok_or_else(|| eyre!("edge source '{}' does not exist", edge.from))
 }
 
-fn validate_unique_ids(graph: &PatchGraph) -> Result<()> {
+/// Node ids are written like `adsr_0` or `to-freq_0`: a unit's short name and a number. Hyphens are
+/// allowed because unit ids have them, and generated code spells them as underscores.
+pub fn rust_name(id: &str) -> String {
+  id.replace('-', "_")
+}
+
+fn is_valid_node_id(id: &str) -> bool {
+  id.chars().next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+    && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn validate_node_ids(graph: &PatchGraph) -> Result<()> {
   let mut seen = HashSet::new();
-  match graph.nodes.iter().map(Node::id).find(|id| !seen.insert(*id)) {
-    Some(duplicate) => bail!("duplicate node id '{duplicate}'"),
-    None => Ok(()),
+  if let Some(duplicate) = graph.nodes.iter().map(Node::id).find(|id| !seen.insert(*id)) {
+    bail!("duplicate node id '{duplicate}'");
   }
+
+  let mut rust_names: HashMap<String, &str> = HashMap::new();
+  for id in graph.nodes.iter().map(Node::id) {
+    ensure!(
+      is_valid_node_id(id),
+      "node id '{id}' is not valid: start with a letter or '_', then use letters, digits, '_' and '-'"
+    );
+    if let Some(other) = rust_names.insert(rust_name(id), id) {
+      bail!("node ids '{other}' and '{id}' would both become '{}' in the generated code", rust_name(id));
+    }
+  }
+  Ok(())
 }
 
 fn validate_edge_endpoints(graph: &PatchGraph) -> Result<()> {

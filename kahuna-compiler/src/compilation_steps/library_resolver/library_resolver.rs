@@ -7,13 +7,15 @@
 //! listing it, and the instrument's own library in `units/`, if it has one. `[libraries]` in
 //! instrument.toml is rejected until other libraries are supported.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use serde_json::Value as Json;
+
+use kahuna_unit_syntax::is_valid_unit_id;
 
 use crate::compilation_steps::instrument_file_parser::instrument_metadata::{InstrumentMetadata, SELF_LIBRARY};
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
@@ -51,7 +53,7 @@ struct LocatedLibrary {
 
 #[derive(Debug)]
 pub struct ResolvedLibraries {
-  /// Every usable unit, keyed `{library}/{unit id}`, e.g. `kahuna-std/adsr-envelope`.
+  /// Every usable unit, keyed `{library}/{unit id}`, e.g. `kahuna-std/adsr`.
   pub catalog: StaticCatalog,
   /// Units left out of the catalog because patches can't use them yet, with the reason.
   pub unsupported_units: Vec<String>,
@@ -65,14 +67,24 @@ pub fn resolve_libraries(instrument_dir: &Path, metadata: &InstrumentMetadata, o
   write_generated_crate(&crate_dir, metadata, &dependencies)?;
   let located = locate_dependencies(&crate_dir, &dependencies)?;
 
+  let manifests = dependencies
+    .iter()
+    .zip(&located)
+    .map(|(dependency, located)| {
+      let manifest = read_library_manifest(&located.directory)?;
+      validate_unit_ids(&dependency.reference, &manifest)?;
+      Ok(manifest)
+    })
+    .collect::<Result<Vec<_>>>()?;
+  let short_names = short_names(&dependencies, &manifests);
+
   let mut entries = Vec::new();
   let mut unsupported_units = Vec::new();
-  for (dependency, located) in dependencies.iter().zip(&located) {
-    let manifest = read_library_manifest(&located.directory)?;
+  for ((dependency, located), manifest) in dependencies.iter().zip(&located).zip(&manifests) {
     for unit in &manifest.units {
       let reference = format!("{}/{}", dependency.reference, unit.id);
       // One unusable unit must not make the rest of its library unusable.
-      match unit_spec(unit, &located.extern_name) {
+      match unit_spec(unit, &located.extern_name, &short_names[&reference]) {
         Ok(spec) => entries.push((reference, spec)),
         Err(reason) => unsupported_units.push(format!("{reference}: {reason}")),
       }
@@ -83,6 +95,58 @@ pub fn resolve_libraries(instrument_dir: &Path, metadata: &InstrumentMetadata, o
     catalog: StaticCatalog::new(entries),
     unsupported_units,
   })
+}
+
+/// The manifest is written by `kahuna-compiler manifest`, but it is a file in a library's repository
+/// and can be stale or edited, so what the compiler relies on is checked here: every id is valid,
+/// and no id appears twice, since patches refer to units by `{library}/{id}`.
+fn validate_unit_ids(library: &str, manifest: &LibraryManifest) -> Result<()> {
+  let mut seen = HashSet::new();
+  for unit in &manifest.units {
+    ensure!(
+      is_valid_unit_id(&unit.id),
+      "{LIBRARY_MANIFEST_FILE} of '{library}': unit id '{}' does not match [a-z][a-z0-9]*(-[a-z0-9]+)*",
+      unit.id
+    );
+    ensure!(
+      seen.insert(unit.id.as_str()),
+      "{LIBRARY_MANIFEST_FILE} of '{library}': unit id '{}' appears more than once; every unit needs its own `id`",
+      unit.id
+    );
+  }
+  Ok(())
+}
+
+/// The short name of every unit, keyed `{library}/{unit id}`. A unit keeps its id, unless another
+/// library has a unit with the same id: then both get the library as a prefix, with an underscore.
+/// Ids never contain an underscore, so a prefixed name can't equal an id.
+///
+/// Every unit takes part, usable in patches yet or not, so a unit's name doesn't change when the
+/// generator learns to handle it. It does depend on which libraries an instrument uses.
+fn short_names(dependencies: &[LibraryDependency], manifests: &[LibraryManifest]) -> HashMap<String, String> {
+  let mut libraries_by_id: HashMap<&str, usize> = HashMap::new();
+  for manifest in manifests {
+    // Ids are unique within a library (validated), so this counts libraries.
+    for unit in &manifest.units {
+      *libraries_by_id.entry(&unit.id).or_default() += 1;
+    }
+  }
+
+  dependencies
+    .iter()
+    .zip(manifests)
+    .flat_map(|(dependency, manifest)| {
+      let libraries_by_id = &libraries_by_id;
+      manifest.units.iter().map(move |unit| {
+        let name = if libraries_by_id[unit.id.as_str()] > 1 {
+          format!("{}_{}", dependency.reference, unit.id)
+        } else {
+          unit.id.clone()
+        };
+        (format!("{}/{}", dependency.reference, unit.id), name)
+      })
+    })
+    .collect()
 }
 
 fn library_dependencies(instrument_dir: &Path, metadata: &InstrumentMetadata) -> Result<Vec<LibraryDependency>> {
@@ -257,7 +321,7 @@ fn read_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
   Ok(manifest)
 }
 
-fn unit_spec(unit: &UnitEntry, extern_name: &str) -> Result<UnitSpec> {
+fn unit_spec(unit: &UnitEntry, extern_name: &str, short_name: &str) -> Result<UnitSpec> {
   let (inputs, outputs): (Vec<&PortEntry>, Vec<&PortEntry>) =
     unit.ports.iter().partition(|port| port.direction == PortDirection::Input);
   let call_style = match unit.kind {
@@ -278,6 +342,7 @@ fn unit_spec(unit: &UnitEntry, extern_name: &str) -> Result<UnitSpec> {
   };
 
   Ok(UnitSpec {
+    short_name: short_name.to_string(),
     type_path: format!("{extern_name}::{}", unit.rust_path),
     call_style,
     inputs: inputs.into_iter().map(port_spec).collect::<Result<_>>()?,
@@ -395,15 +460,81 @@ mod tests {
     let catalog = &resolved.catalog;
 
     for unit in [
-      "kahuna-std/sine-osc",
-      "kahuna-std/adsr-envelope",
+      "kahuna-std/sine",
+      "kahuna-std/adsr",
       "kahuna-std/multiply",
-      "kahuna-std/midi-event-to-frequency-parameter",
-      "kahuna-std/midi-event-to-gate-parameter",
+      "kahuna-std/to-freq",
+      "kahuna-std/to-gate",
     ] {
       assert!(catalog.find(unit).is_some(), "{unit} is missing from the catalog");
     }
-    assert!(catalog.find("self/sine-osc").is_none(), "no units/ directory, so no own units");
+    assert!(catalog.find("self/sine").is_none(), "no units/ directory, so no own units");
+  }
+
+  #[test]
+  fn units_keep_their_id_as_short_name_when_no_other_library_uses_it() {
+    let instrument_dir = instrument_with_files("short-names", &[]);
+
+    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("short-names")).unwrap();
+
+    let short_name = |unit: &str| resolved.catalog.find(unit).unwrap().short_name.clone();
+    assert_eq!(short_name("kahuna-std/adsr"), "adsr");
+    assert_eq!(short_name("kahuna-std/sine"), "sine");
+    assert_eq!(short_name("kahuna-std/to-freq"), "to-freq");
+    assert_eq!(short_name("kahuna-std/scale-offset"), "scale-offset");
+  }
+
+  #[test]
+  fn libraries_that_share_an_id_get_it_prefixed_with_their_name() {
+    // The fixture's own sine oscillator has the id `sine`, like the one in kahuna-std.
+    let instrument_dir = fixture_instrument();
+
+    let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("collision")).unwrap();
+
+    let short_name = |unit: &str| resolved.catalog.find(unit).unwrap().short_name.clone();
+    assert_eq!(short_name("self/sine"), "self_sine");
+    assert_eq!(short_name("kahuna-std/sine"), "kahuna-std_sine");
+    assert_eq!(short_name("kahuna-std/adsr"), "adsr", "ids that are not shared stay as they are");
+  }
+
+  /// An own library with a hand-written manifest, so the resolver sees what the manifest generator never writes.
+  fn instrument_with_own_units(name: &str, units: &str) -> PathBuf {
+    let manifest = format!("{{ \"format_version\": {FORMAT_VERSION}, \"units\": [{units}] }}");
+    instrument_with_files(
+      name,
+      &[
+        ("units/Cargo.toml", "[package]\nname = \"bare-units\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
+        ("units/src/lib.rs", ""),
+        ("units/kahuna-library.json", &manifest),
+      ],
+    )
+  }
+
+  fn unit_json(id: &str, rust_path: &str) -> String {
+    format!("{{ \"id\": \"{id}\", \"kind\": \"module\", \"rust_path\": \"{rust_path}\", \"ports\": [] }}")
+  }
+
+  #[test]
+  fn rejects_a_manifest_that_uses_an_id_twice() {
+    let units = [unit_json("osc", "OscA"), unit_json("osc", "OscB")].join(",");
+    let instrument_dir = instrument_with_own_units("same-id", &units);
+
+    let error = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("same-id")).unwrap_err();
+
+    let message = format!("{error}");
+    assert!(message.contains("'self'") && message.contains("'osc' appears more than once"), "{message}");
+  }
+
+  #[test]
+  fn rejects_manifest_ids_that_do_not_match_the_pattern() {
+    for id in ["Osc", "osc_a", "1osc", "osc-", ""] {
+      let instrument_dir = instrument_with_own_units("bad-id", &unit_json(id, "Osc"));
+
+      let error = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("bad-id")).unwrap_err();
+
+      let message = format!("{error}");
+      assert!(message.contains(&format!("unit id '{id}'")) && message.contains("does not match"), "{message}");
+    }
   }
 
   #[test]
@@ -413,16 +544,16 @@ mod tests {
     let resolved = resolve_libraries(&instrument_dir, &metadata(&instrument_dir), &scratch_dir("found")).unwrap();
     let catalog = &resolved.catalog;
 
-    let sine = catalog.find("self/sine-osc").expect("own unit");
+    let sine = catalog.find("self/sine").expect("own unit");
     assert_eq!(sine.type_path, "test_synth_units::oscillators::SineOsc");
 
-    let envelope = catalog.find("kahuna-std/adsr-envelope").expect("std module");
+    let envelope = catalog.find("kahuna-std/adsr").expect("std module");
     assert_eq!(envelope.type_path, "kahuna_std::modules::adsr_envelope::AdsrEnvelope");
     assert_eq!(envelope.inputs[0].arity, Arity::Required);
     assert_eq!(envelope.inputs[1].arity, Arity::Optional);
     assert_eq!(envelope.outputs[0].kind, ValueKind::Signal);
 
-    let gate = catalog.find("kahuna-std/midi-event-to-gate-parameter").expect("converter");
+    let gate = catalog.find("kahuna-std/to-gate").expect("converter");
     assert_eq!(gate.type_path, "kahuna_std::converters::midi_event_to_gate_parameter::MidiEventToGateParameter");
     assert!(matches!(gate.call_style, CallStyle::Converter));
 

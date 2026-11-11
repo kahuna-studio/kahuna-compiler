@@ -1,4 +1,4 @@
-use crate::compilation_steps::patch_code_generator::analysis::{analyze, AnalyzedNode, AnalyzedPatch, Behavior, BufferRef, Connection, Domain, MergeMode, ResolvedInput};
+use crate::compilation_steps::patch_code_generator::analysis::{analyze, rust_name, AnalyzedNode, AnalyzedPatch, Behavior, BufferRef, Connection, Domain, MergeMode, ResolvedInput};
 use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, UnitCatalog, UnitSpec, ValueKind};
 use eyre::{bail, eyre, Result, WrapErr};
 use proc_macro2::{Ident, TokenStream};
@@ -507,7 +507,7 @@ fn whole_buffer_mut(output: &BufferRef) -> TokenStream {
 // ---------------------------------------------------------------------------
 
 fn voices_ident(poly_id: &str) -> Ident {
-  format_ident!("{}_voices", poly_id)
+  format_ident!("{}_voices", rust_name(poly_id))
 }
 
 fn buffer_field(buffer: &BufferRef) -> Ident {
@@ -518,6 +518,7 @@ fn buffer_field(buffer: &BufferRef) -> Ident {
   let name = region_prefix
     .into_iter()
     .chain([buffer.node_id.as_str(), buffer.port_name.as_str()])
+    .map(rust_name)
     .collect::<Vec<_>>()
     .join("__");
 
@@ -526,9 +527,9 @@ fn buffer_field(buffer: &BufferRef) -> Ident {
 
 fn instance_ident(node: &AnalyzedNode) -> Ident {
   let name = match (&node.behavior, &node.run_domain) {
-    (Behavior::VoiceAllocator { poly_id, .. }, _) => format!("{poly_id}__voice_allocator"),
-    (_, Domain::Poly { poly_id }) => format!("{poly_id}__{}", node.id),
-    _ => node.id.clone(),
+    (Behavior::VoiceAllocator { poly_id, .. }, _) => format!("{}__voice_allocator", rust_name(poly_id)),
+    (_, Domain::Poly { poly_id }) => format!("{}__{}", rust_name(poly_id), rust_name(&node.id)),
+    _ => rust_name(&node.id),
   };
 
   format_ident!("{}", name)
@@ -570,10 +571,10 @@ mod tests {
   "nodes": [
     { "id": "midi_in_0", "kind": "interface", "interface": "midi_in" },
     { "id": "poly_0", "kind": "poly", "voices": 8 },
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
-    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-gate-parameter" },
-    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr-envelope" },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/to-freq" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine" },
+    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna-std/to-gate" },
+    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr" },
     { "id": "mult_0", "kind": "operator", "unit": "kahuna-std/multiply" },
     { "id": "merge_0", "kind": "merge", "mode": "average" },
     { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
@@ -623,6 +624,51 @@ mod tests {
     strip(source).contains(&strip(snippet))
   }
 
+  /// Ids made of a unit's short name and a number, as the IDE writes them.
+  fn with_short_ids(patch: &str) -> String {
+    [
+      ("freq_conv_0", "to-freq_0"),
+      ("gate_conv_0", "to-gate_0"),
+      ("sine_osc_0", "sine_0"),
+      ("mult_0", "multiply_0"),
+    ]
+    .iter()
+    .fold(patch.to_string(), |patch, (from, to)| patch.replace(from, to))
+  }
+
+  #[test]
+  fn node_ids_with_hyphens_become_underscored_rust_names() {
+    let graph: PatchGraph = with_short_ids(SINE_PATCH).parse().unwrap();
+
+    let source = generate_patch_source(&graph, std_catalog()).unwrap();
+
+    assert!(contains_code(&source, "poly_0__to_freq_0__out"), "{source}");
+    assert!(contains_code(&source, "self.state.poly_0__sine_0__out.voice(voice)[frame]"), "{source}");
+    assert!(!source.contains("to-freq"), "{source}");
+  }
+
+  #[test]
+  fn rejects_node_ids_that_are_not_valid_in_generated_code() {
+    for id in ["9lives", "-lead", "lead osc", "lead.osc", "lead[0]", ""] {
+      let json = SINE_PATCH.replace("\"id\": \"adsr_0\"", &format!("\"id\": \"{id}\""));
+      let graph: PatchGraph = json.parse().unwrap();
+
+      let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
+
+      assert!(format!("{error:#}").contains("is not valid"), "'{id}': {error:#}");
+    }
+  }
+
+  #[test]
+  fn rejects_node_ids_that_collide_once_hyphens_are_underscores() {
+    let json = SINE_PATCH.replace("mult_0", "mul-t").replace("\"id\": \"merge_0\"", "\"id\": \"mul_t\"");
+    let graph: PatchGraph = json.parse().unwrap();
+
+    let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
+
+    assert!(format!("{error:#}").contains("would both become 'mul_t'"), "{error:#}");
+  }
+
   #[test]
   fn rejects_unmerged_poly_output() {
     let json = SINE_PATCH.replace("\"to\": \"merge_0.in\"", "\"to\": \"audio_out_0.in\"");
@@ -638,9 +684,9 @@ mod tests {
   "nodes": [
     { "id": "midi_in_0", "kind": "interface", "interface": "midi_in" },
     { "id": "poly_0", "kind": "poly", "voices": 4 },
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/to-freq" },
     { "id": "octave_0", "kind": "operator", "unit": "kahuna-std/scale-offset" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine" },
     { "id": "merge_0", "kind": "merge", "mode": "sum" },
     { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
   ],

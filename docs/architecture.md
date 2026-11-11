@@ -119,7 +119,11 @@ doesn't verify this itself; keeping manifests current is left to the library's o
 
 **Units are referenced by id, not by Rust path.** An id defaults to the struct name in kebab-case
 (`AdsrEnvelope` → `adsr-envelope`) and can be pinned with `#[kahuna_module(id = "...")]`, so renaming or moving a
-struct doesn't have to break existing patches.
+struct doesn't have to break existing patches. Ids are short names that match `[a-z][a-z0-9]*(-[a-z0-9]+)*`
+(`to-freq`, `adsr`), because the IDE builds node ids from them (`to-freq_0`), and an id is unique within its library:
+the compiler rejects a `kahuna-library.json` that uses one twice. Where two libraries of an instrument have a unit with
+the same id, the catalog gives both a short name with the library and an underscore as prefix (`self_sine`,
+`kahuna-std_sine`); references in patches always carry the library, so they stay `self/sine` and `kahuna-std/sine`.
 
 **The instrument directory is addressed by path, not by crate name.** The compiler always looks for `units/`,
 `patch.json`, and `parameters.json` at fixed relative locations, and reads `units/Cargo.toml` fresh each time it

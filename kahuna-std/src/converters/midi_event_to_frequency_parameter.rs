@@ -2,7 +2,7 @@ use kahuna_core::midi::MidiEvent;
 use kahuna_core::ModuleEnv;
 use kahuna_unit::kahuna_converter;
 
-#[kahuna_converter]
+#[kahuna_converter(id = "to-freq")]
 pub struct MidiEventToFrequencyParameter {
     active_notes: Vec<u8>,
     last_frequency: f32,

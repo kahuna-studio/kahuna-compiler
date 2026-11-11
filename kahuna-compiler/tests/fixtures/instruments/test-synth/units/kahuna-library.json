@@ -2,7 +2,7 @@
   "format_version": 1,
   "units": [
     {
-      "id": "sine-osc",
+      "id": "sine",
       "kind": "module",
       "rust_path": "oscillators::SineOsc",
       "ports": [
