@@ -562,7 +562,7 @@ fn parse_path(path: &str) -> Result<syn::Path> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::compilation_steps::patch_code_generator::catalog::builtin_catalog;
+  use crate::compilation_steps::library_resolver::library_resolver::test_support::std_catalog;
   use crate::compilation_steps::patch_file_parser::patch_graph::PatchGraph;
 
   const SINE_PATCH: &str = r#"
@@ -570,10 +570,10 @@ mod tests {
   "nodes": [
     { "id": "midi_in_0", "kind": "interface", "interface": "midi_in" },
     { "id": "poly_0", "kind": "poly", "voices": 8 },
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToFrequencyParameter" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "self::SineOsc" },
-    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToGateParameter" },
-    { "id": "adsr_0", "kind": "module", "unit": "self::AdsrEnvelope" },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
+    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-gate-parameter" },
+    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr-envelope" },
     { "id": "mult_0", "kind": "operator", "unit": "kahuna-std/multiply" },
     { "id": "merge_0", "kind": "merge", "mode": "average" },
     { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
@@ -595,7 +595,7 @@ mod tests {
   #[test]
   fn generates_voice_loop_and_merge() {
     let graph: PatchGraph = SINE_PATCH.parse().unwrap();
-    let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
+    let source = generate_patch_source(&graph, std_catalog()).unwrap();
 
     assert!(contains_code(&source, "for voice in 0..self.poly_0_voices"));
     assert!(contains_code(
@@ -611,10 +611,10 @@ mod tests {
   #[test]
   fn reaches_module_io_through_the_module_trait() {
     let graph: PatchGraph = SINE_PATCH.parse().unwrap();
-    let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
+    let source = generate_patch_source(&graph, std_catalog()).unwrap();
 
-    assert!(contains_code(&source, "<crate::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Inputs::new("));
-    assert!(contains_code(&source, "<crate::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Outputs::new("));
+    assert!(contains_code(&source, "<kahuna_std::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Inputs::new("));
+    assert!(contains_code(&source, "<kahuna_std::modules::sine_osc::SineOsc as kahuna_core::KahunaModule>::Outputs::new("));
   }
 
   /// prettyplease wraps long lines and then adds trailing commas, so compare without both.
@@ -628,7 +628,7 @@ mod tests {
     let json = SINE_PATCH.replace("\"to\": \"merge_0.in\"", "\"to\": \"audio_out_0.in\"");
     let graph: PatchGraph = json.parse().unwrap();
 
-    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
     assert!(format!("{error:#}").contains("merge"));
   }
 
@@ -638,9 +638,9 @@ mod tests {
   "nodes": [
     { "id": "midi_in_0", "kind": "interface", "interface": "midi_in" },
     { "id": "poly_0", "kind": "poly", "voices": 4 },
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToFrequencyParameter" },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
     { "id": "octave_0", "kind": "operator", "unit": "kahuna-std/scale-offset" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "self::SineOsc" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
     { "id": "merge_0", "kind": "merge", "mode": "sum" },
     { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
   ],
@@ -658,7 +658,7 @@ mod tests {
   #[test]
   fn operator_on_parameters_runs_once_per_block_with_defaults_for_unconnected_inputs() {
     let graph: PatchGraph = PARAMETER_OPERATOR_PATCH.parse().unwrap();
-    let source = generate_patch_source(&graph, &builtin_catalog()).unwrap();
+    let source = generate_patch_source(&graph, std_catalog()).unwrap();
 
     assert!(contains_code(
       &source,
@@ -674,7 +674,7 @@ mod tests {
     let json = SINE_PATCH.replace("{ \"from\": \"adsr_0.envelope\", \"to\": \"mult_0.in[1]\" },", "");
     let graph: PatchGraph = json.parse().unwrap();
 
-    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
     assert!(format!("{error:#}").contains("needs at least 2 connections"), "{error:#}");
   }
 
@@ -683,7 +683,7 @@ mod tests {
     let json = SINE_PATCH.replace("\"kind\": \"operator\"", "\"kind\": \"module\"");
     let graph: PatchGraph = json.parse().unwrap();
 
-    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
     assert!(format!("{error:#}").contains("wrong kind for unit 'kahuna-std/multiply'"), "{error:#}");
   }
 
@@ -703,7 +703,7 @@ mod tests {
 "#;
     let graph: PatchGraph = json.parse().unwrap();
 
-    let error = generate_patch_source(&graph, &builtin_catalog()).unwrap_err();
+    let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
     assert!(format!("{error:#}").contains("cycle"));
   }
 }

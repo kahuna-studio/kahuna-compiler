@@ -337,6 +337,26 @@ fn operator_port_spec(port: &PortEntry, fold: bool) -> Result<PortSpec> {
   })
 }
 
+/// Shared by the tests of other compilation steps.
+#[cfg(test)]
+pub mod test_support {
+  use std::sync::OnceLock;
+
+  use super::*;
+
+  /// The catalog of an instrument that has no units of its own: `kahuna-std` only.
+  /// Resolved once per test run, since it runs `cargo metadata`.
+  pub fn std_catalog() -> &'static StaticCatalog {
+    static CATALOG: OnceLock<StaticCatalog> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+      let directory = std::env::temp_dir().join(format!("kahuna-std-catalog-{}", std::process::id()));
+      let metadata = InstrumentMetadata::from_str("name = \"std-catalog\"\nvendor = \"Kahuna Studio\"\nversion = \"0.1.0\"\n").unwrap();
+      let resolved = resolve_libraries(&directory, &metadata, &directory.join("generated")).unwrap();
+      resolved.catalog
+    })
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
