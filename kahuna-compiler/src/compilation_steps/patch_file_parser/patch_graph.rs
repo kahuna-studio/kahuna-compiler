@@ -107,7 +107,28 @@ impl FromStr for PatchGraph {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s).wrap_err("failed to parse patch graph")
+        /// Nodes stay raw JSON first, so a node that fails to parse can be named in the error.
+        #[derive(Deserialize)]
+        struct RawPatchGraph {
+            nodes: Vec<serde_json::Value>,
+            #[serde(default)]
+            edges: Vec<Edge>,
+        }
+
+        let raw: RawPatchGraph = serde_json::from_str(s).wrap_err("failed to parse patch graph")?;
+        let nodes = raw
+            .nodes
+            .into_iter()
+            .enumerate()
+            .map(|(position, value)| {
+                let id = value.get("id").and_then(|id| id.as_str()).map(str::to_string);
+                serde_json::from_value::<Node>(value).wrap_err_with(|| match id {
+                    Some(id) => format!("failed to parse patch graph: node '{id}'"),
+                    None => format!("failed to parse patch graph: node at position {position} has no id"),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(PatchGraph { nodes, edges: raw.edges })
     }
 }
 
@@ -133,6 +154,25 @@ mod tests {
         assert!(
             matches!(&graph.nodes[0], Node::Interface { interface, .. } if interface == "midi_in")
         );
+    }
+
+    #[test]
+    fn test_unknown_node_kind_names_the_node() {
+        let json = r#"{ "nodes": [ { "id": "reverb_0", "kind": "reverb" } ] }"#;
+
+        let error = json.parse::<PatchGraph>().unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("node 'reverb_0'") && message.contains("reverb"), "{message}");
+    }
+
+    #[test]
+    fn test_node_without_id_is_reported_by_position() {
+        let json = r#"{ "nodes": [ { "id": "a", "kind": "merge", "mode": "sum" }, { "kind": "merge", "mode": "sum" } ] }"#;
+
+        let error = json.parse::<PatchGraph>().unwrap_err();
+
+        assert!(format!("{error:#}").contains("node at position 1 has no id"), "{error:#}");
     }
 
     #[test]

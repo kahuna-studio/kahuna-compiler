@@ -4,10 +4,10 @@
 
     { "id": "poly_0", "kind": "poly", "voices": 8 },
 
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToFrequencyParameter" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "self::SineOsc" },
-    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna_std::MidiEventToGateParameter" },
-    { "id": "adsr_0", "kind": "module", "unit": "self::AdsrEnvelope" },
+    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
+    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
+    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-gate-parameter" },
+    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr-envelope" },
     { "id": "mult_0", "kind": "operator", "unit": "kahuna-std/multiply" },
 
     { "id": "merge_0", "kind": "merge", "mode": "average" },
