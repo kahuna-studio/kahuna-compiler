@@ -3,7 +3,7 @@ use kahuna_unit::kahuna_module;
 use crate::phase_generators::AudioRatePhase;
 use std::f32::consts::PI;
 
-#[kahuna_module]
+#[kahuna_module(id = "sine")]
 pub struct SineOsc {
     phase: AudioRatePhase,
 
@@ -37,8 +37,8 @@ mod tests {
     use kahuna_core::{KahunaModule, PortDirection, Rate, StreamKind, ValueType};
 
     #[test]
-    fn test_default_id() {
-        assert_eq!(SineOsc::ID, "sine-osc");
+    fn test_id() {
+        assert_eq!(SineOsc::ID, "sine");
     }
 
     #[test]

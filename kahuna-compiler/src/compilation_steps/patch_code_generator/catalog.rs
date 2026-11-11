@@ -56,6 +56,12 @@ pub enum CallStyle {
 
 #[derive(Debug, Clone)]
 pub struct UnitSpec {
+  /// What the IDE builds node ids from, e.g. `adsr` for `adsr_0`: the unit's id, or the id with its
+  /// library and an underscore as prefix where two libraries have a unit with that id
+  /// (`self_sine`, `kahuna-std_sine`).
+  // Read by the IDE; the compiler itself only resolves it.
+  #[allow(dead_code)]
+  pub short_name: String,
   pub type_path: String,
   pub call_style: CallStyle,
   pub inputs: Vec<PortSpec>,

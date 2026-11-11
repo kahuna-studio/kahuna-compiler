@@ -20,7 +20,7 @@ impl UnitAttributes {
         if !is_valid_unit_id(&id.value()) {
           return Err(syn::Error::new_spanned(
             &id,
-            "unit ids must be kebab-case: lowercase letters, digits, and single hyphens",
+            "unit ids must match [a-z][a-z0-9]*(-[a-z0-9]+)*: start with a lowercase letter, then lowercase letters, digits, and single hyphens",
           ));
         }
         attributes.id = Some(id);

@@ -2,7 +2,7 @@
   "format_version": 1,
   "units": [
     {
-      "id": "adsr-envelope",
+      "id": "adsr",
       "kind": "module",
       "rust_path": "envelopes::adsr_envelope::AdsrEnvelope",
       "ports": [

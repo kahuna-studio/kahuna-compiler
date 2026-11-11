@@ -103,13 +103,13 @@ mod tests {
   #[test]
   fn reports_unknown_units_with_node_id() {
     let instrument_dir = golden_synth_with_patch("unknown-unit", |patch| {
-      patch.replace("kahuna-std/sine-osc", "kahuna-std/does-not-exist")
+      patch.replace("kahuna-std/sine", "kahuna-std/does-not-exist")
     });
 
     let error = generate_instrument_patch(&instrument_dir, &output_dir("unknown-unit")).unwrap_err();
 
     let message = format!("{error:#}");
-    assert!(message.contains("sine_osc_0") && message.contains("kahuna-std/does-not-exist"), "{message}");
+    assert!(message.contains("sine_0") && message.contains("kahuna-std/does-not-exist"), "{message}");
     assert!(message.contains("patch.json"), "{message}");
   }
 

@@ -10,7 +10,7 @@ enum Stage {
   Release,
 }
 
-#[kahuna_module]
+#[kahuna_module(id = "adsr")]
 pub struct AdsrEnvelope {
   sample_rate: f32,
   stage: Stage,

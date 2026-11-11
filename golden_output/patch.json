@@ -4,11 +4,11 @@
 
     { "id": "poly_0", "kind": "poly", "voices": 8 },
 
-    { "id": "freq_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-frequency-parameter" },
-    { "id": "sine_osc_0", "kind": "module", "unit": "kahuna-std/sine-osc" },
-    { "id": "gate_conv_0", "kind": "converter", "unit": "kahuna-std/midi-event-to-gate-parameter" },
-    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr-envelope" },
-    { "id": "mult_0", "kind": "operator", "unit": "kahuna-std/multiply" },
+    { "id": "to-freq_0", "kind": "converter", "unit": "kahuna-std/to-freq" },
+    { "id": "sine_0", "kind": "module", "unit": "kahuna-std/sine" },
+    { "id": "to-gate_0", "kind": "converter", "unit": "kahuna-std/to-gate" },
+    { "id": "adsr_0", "kind": "module", "unit": "kahuna-std/adsr" },
+    { "id": "multiply_0", "kind": "operator", "unit": "kahuna-std/multiply" },
 
     { "id": "merge_0", "kind": "merge", "mode": "average" },
 
@@ -18,16 +18,16 @@
   "edges": [
     { "from": "midi_in_0.midi_events", "to": "poly_0.midi_events" },
 
-    { "from": "poly_0.out", "to": "freq_conv_0.midi_events" },
-    { "from": "freq_conv_0.out", "to": "sine_osc_0.frequency" },
+    { "from": "poly_0.out", "to": "to-freq_0.midi_events" },
+    { "from": "to-freq_0.out", "to": "sine_0.frequency" },
 
-    { "from": "poly_0.out", "to": "gate_conv_0.midi_events" },
-    { "from": "gate_conv_0.out", "to": "adsr_0.gate" },
+    { "from": "poly_0.out", "to": "to-gate_0.midi_events" },
+    { "from": "to-gate_0.out", "to": "adsr_0.gate" },
 
-    { "from": "sine_osc_0.out", "to": "mult_0.in[0]" },
-    { "from": "adsr_0.envelope", "to": "mult_0.in[1]" },
+    { "from": "sine_0.out", "to": "multiply_0.in[0]" },
+    { "from": "adsr_0.envelope", "to": "multiply_0.in[1]" },
 
-    { "from": "mult_0.out", "to": "merge_0.in" },
+    { "from": "multiply_0.out", "to": "merge_0.in" },
 
     { "from": "merge_0.out", "to": "audio_out_0.in" }
   ]
