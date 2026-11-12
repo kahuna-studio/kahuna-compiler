@@ -9,3 +9,4 @@ pub mod instrument_file_parser;
 pub mod patch_code_generator;
 pub mod library_manifest_generator;
 pub mod library_resolver;
+pub mod crate_writer;
