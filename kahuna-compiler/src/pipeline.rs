@@ -30,7 +30,7 @@ pub struct GeneratedPatch {
 pub struct GeneratedCrate {
   /// The name from instrument.toml.
   pub instrument_name: String,
-  /// `{output_dir}/{name}`: a crate that `cargo build` can build.
+  /// `{output_dir}/rust`: a crate that `cargo build` can build.
   pub crate_dir: PathBuf,
   /// Units patches can't use yet, with the reason. Warnings, not errors.
   pub unsupported_units: Vec<String>,
@@ -39,8 +39,8 @@ pub struct GeneratedCrate {
 /// Reads `instrument.toml` and `patch.json` from the instrument directory, builds the unit catalog,
 /// validates the patch against it, and returns the generated `patch.rs`.
 ///
-/// The only file it writes is the generated crate's `Cargo.toml` and `src/lib.rs` in
-/// `output_dir/{name}/`, which `cargo metadata` needs to locate the libraries. A patch that does
+/// The only files it writes are the generated project's `Cargo.toml` and `src/lib.rs` in
+/// `output_dir/rust/`, which `cargo metadata` needs to locate the libraries. A patch that does
 /// not parse leaves `output_dir` untouched.
 pub fn generate_instrument_patch(instrument_dir: &Path, output_dir: &Path) -> Result<GeneratedPatch> {
   let compiled = compile_patch(instrument_dir, output_dir)?;
@@ -52,11 +52,11 @@ pub fn generate_instrument_patch(instrument_dir: &Path, output_dir: &Path) -> Re
 }
 
 /// Everything `generate_instrument_patch` does, and then writes the complete crate to
-/// `{output_dir}/{name}/`: `Cargo.toml`, `src/lib.rs`, `src/patch.rs` and `src/main.rs`.
+/// `{output_dir}/rust/`: `Cargo.toml`, `src/lib.rs`, `src/patch.rs` and `src/main.rs`.
 /// An existing crate is overwritten in place; its `target/` stays.
 pub fn generate_instrument_crate(instrument_dir: &Path, output_dir: &Path) -> Result<GeneratedCrate> {
   let compiled = compile_patch(instrument_dir, output_dir)?;
-  let crate_dir = crate_dir(output_dir, &compiled.metadata.name);
+  let crate_dir = crate_dir(output_dir);
   write_crate(&crate_dir, &compiled.metadata, &compiled.resolved.dependencies, &compiled.source)?;
   Ok(GeneratedCrate {
     instrument_name: compiled.metadata.name,
@@ -76,7 +76,7 @@ fn compile_patch(instrument_dir: &Path, output_dir: &Path) -> Result<CompiledPat
   let patch_path = instrument_dir.join(PATCH_FILE);
   let graph = read_patch_graph(&patch_path)?;
 
-  let resolved = resolve_libraries(instrument_dir, &metadata, output_dir)?;
+  let resolved = resolve_libraries(&metadata, output_dir)?;
   let source = generate_patch_source(&graph, &resolved.catalog)
     .wrap_err_with(|| format!("Cannot compile {}", patch_path.display()))?;
   Ok(CompiledPatch { metadata, source, resolved })
@@ -166,7 +166,7 @@ mod tests {
     let generated = generate_instrument_crate(&golden_synth(), &output_dir).unwrap();
 
     assert_eq!(generated.instrument_name, "golden-synth");
-    assert_eq!(generated.crate_dir, output_dir.join("golden-synth"));
+    assert_eq!(generated.crate_dir, output_dir.join("rust"));
     for file in ["Cargo.toml", "src/lib.rs", "src/patch.rs", "src/main.rs"] {
       let contents = fs::read_to_string(generated.crate_dir.join(file)).unwrap();
       assert!(contents.starts_with(&format!("{} {}", if file.ends_with(".toml") { "#" } else { "//" }, GENERATED_NOTICE)), "{file}");

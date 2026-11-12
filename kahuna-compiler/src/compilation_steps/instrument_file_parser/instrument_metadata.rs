@@ -14,13 +14,10 @@ pub struct InstrumentMetadata {
     pub version: String,
     /// Unit libraries this instrument uses, written like Cargo dependencies
     /// (`kahuna-std = "0.1"`, `my-units = { path = "../my-units" }`, ...).
-    /// The instrument's own library in `units/` is found automatically and not listed here.
+    /// `kahuna-std` is available to every instrument and not listed here.
     #[serde(default)]
     pub libraries: BTreeMap<String, toml::Value>,
 }
-
-/// How patches refer to the instrument's own library in `units/`, e.g. `self/sine-osc`.
-pub const SELF_LIBRARY: &str = "self";
 
 impl InstrumentMetadata {
     /// Parse instrument.toml from a file path
@@ -73,12 +70,6 @@ impl InstrumentMetadata {
             return Err(eyre!("Version cannot be empty"));
         }
 
-        if self.libraries.contains_key(SELF_LIBRARY) {
-            return Err(eyre!(
-                "'{SELF_LIBRARY}' is reserved for the instrument's own library in units/ and cannot be listed in [libraries]"
-            ));
-        }
-
         Ok(())
     }
 }
@@ -116,19 +107,6 @@ my-effects = { path = "../my-effects" }
         assert_eq!(metadata.libraries.len(), 2);
         assert_eq!(metadata.libraries["kahuna-std"].as_str(), Some("0.1"));
         assert_eq!(metadata.libraries["my-effects"]["path"].as_str(), Some("../my-effects"));
-    }
-
-    #[test]
-    fn test_self_is_reserved() {
-        let toml_str = r#"
-name = "my-synth"
-vendor = "My Company"
-version = "0.1.0"
-
-[libraries]
-self = { path = "units" }
-"#;
-        assert!(InstrumentMetadata::from_str(toml_str).is_err());
     }
 
     #[test]
