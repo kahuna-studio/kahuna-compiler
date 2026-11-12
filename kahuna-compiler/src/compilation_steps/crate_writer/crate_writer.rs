@@ -29,9 +29,13 @@ pub struct CargoDependency {
   pub specification: toml::Value,
 }
 
-/// Where the generated crate of an instrument goes.
-pub fn crate_dir(output_dir: &Path, instrument_name: &str) -> PathBuf {
-  output_dir.join(instrument_name)
+/// The directory of the generated Rust project inside the output directory (`.kahuna/rust`). The
+/// name is fixed, not the instrument's: `.kahuna/` holds other things as well, e.g. `bin/`, and an
+/// instrument called `bin` must not collide with them.
+pub const RUST_DIR: &str = "rust";
+
+pub fn crate_dir(output_dir: &Path) -> PathBuf {
+  output_dir.join(RUST_DIR)
 }
 
 /// Until the compiler is installed separately from the toolchain repository, the crates of the
