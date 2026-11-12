@@ -25,9 +25,6 @@ use crate::compilation_steps::library_manifest_generator::library_manifest::{
 };
 use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, StaticCatalog, UnitSpec, ValueKind};
 
-/// Where generated crates go, inside the instrument directory.
-pub const GENERATED_DIR: &str = ".kahuna";
-
 /// The standard library: a sibling of this crate in the toolchain repository, and a dependency of
 /// every generated crate. It is both the crate name and what patches write before the slash.
 const STD_LIBRARY: &str = "kahuna-std";
