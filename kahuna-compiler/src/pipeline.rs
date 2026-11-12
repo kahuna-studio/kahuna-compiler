@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr};
 
-use crate::compilation_steps::crate_writer::crate_writer::{crate_dir, write_crate};
+use crate::compilation_steps::crate_writer::crate_writer::{clean_project, crate_dir, write_crate};
 use crate::compilation_steps::instrument_file_parser::instrument_metadata::InstrumentMetadata;
 use crate::compilation_steps::library_resolver::library_resolver::{resolve_libraries, ResolvedLibraries};
 use crate::compilation_steps::patch_code_generator::patch_code_generator::generate_patch_source;
@@ -13,6 +13,9 @@ use crate::compilation_steps::patch_file_parser::patch_graph::PatchGraph;
 
 /// The file in the instrument directory that holds the patch.
 pub const PATCH_FILE: &str = "patch.json";
+
+/// Where generated files go by default: a disposable directory inside the instrument directory.
+pub const GENERATED_DIR: &str = ".kahuna";
 
 const INSTRUMENT_FILE: &str = "instrument.toml";
 
@@ -27,7 +30,7 @@ pub struct GeneratedPatch {
 }
 
 #[derive(Debug)]
-pub struct GeneratedCrate {
+pub struct BuildReport {
   /// The name from instrument.toml.
   pub instrument_name: String,
   /// `{output_dir}/rust`: a crate that `cargo build` can build.
@@ -39,9 +42,9 @@ pub struct GeneratedCrate {
 /// Reads `instrument.toml` and `patch.json` from the instrument directory, builds the unit catalog,
 /// validates the patch against it, and returns the generated `patch.rs`.
 ///
-/// The only files it writes are the generated project's `Cargo.toml` and `src/lib.rs` in
-/// `output_dir/rust/`, which `cargo metadata` needs to locate the libraries. A patch that does
-/// not parse leaves `output_dir` untouched.
+/// Inputs that cannot be read or parsed leave `output_dir` untouched. Otherwise the generated
+/// project in `output_dir/rust/` is emptied, and only its `Cargo.toml` and `src/lib.rs` are written,
+/// which `cargo metadata` needs to locate the libraries; the next build removes them.
 pub fn generate_instrument_patch(instrument_dir: &Path, output_dir: &Path) -> Result<GeneratedPatch> {
   let compiled = compile_patch(instrument_dir, output_dir)?;
   Ok(GeneratedPatch {
@@ -53,12 +56,13 @@ pub fn generate_instrument_patch(instrument_dir: &Path, output_dir: &Path) -> Re
 
 /// Everything `generate_instrument_patch` does, and then writes the complete crate to
 /// `{output_dir}/rust/`: `Cargo.toml`, `src/lib.rs`, `src/patch.rs` and `src/main.rs`.
-/// An existing crate is overwritten in place; its `target/` stays.
-pub fn generate_instrument_crate(instrument_dir: &Path, output_dir: &Path) -> Result<GeneratedCrate> {
+/// Every build starts from a clean project: what an earlier build left in `rust/` is removed,
+/// except cargo's `target/` and `Cargo.lock`.
+pub fn build_instrument(instrument_dir: &Path, output_dir: &Path) -> Result<BuildReport> {
   let compiled = compile_patch(instrument_dir, output_dir)?;
   let crate_dir = crate_dir(output_dir);
   write_crate(&crate_dir, &compiled.metadata, &compiled.resolved.dependencies, &compiled.source)?;
-  Ok(GeneratedCrate {
+  Ok(BuildReport {
     instrument_name: compiled.metadata.name,
     crate_dir,
     unsupported_units: compiled.resolved.unsupported_units,
@@ -76,6 +80,8 @@ fn compile_patch(instrument_dir: &Path, output_dir: &Path) -> Result<CompiledPat
   let patch_path = instrument_dir.join(PATCH_FILE);
   let graph = read_patch_graph(&patch_path)?;
 
+  // inputs are read and parsed: from here on the output directory is ours to change
+  clean_project(&crate_dir(output_dir))?;
   let resolved = resolve_libraries(&metadata, output_dir)?;
   let source = generate_patch_source(&graph, &resolved.catalog)
     .wrap_err_with(|| format!("Cannot compile {}", patch_path.display()))?;
@@ -163,7 +169,7 @@ mod tests {
   fn writes_the_complete_crate_for_the_golden_instrument() {
     let output_dir = output_dir("crate");
 
-    let generated = generate_instrument_crate(&golden_synth(), &output_dir).unwrap();
+    let generated = build_instrument(&golden_synth(), &output_dir).unwrap();
 
     assert_eq!(generated.instrument_name, "golden-synth");
     assert_eq!(generated.crate_dir, output_dir.join("rust"));
@@ -178,17 +184,57 @@ mod tests {
   }
 
   #[test]
-  fn building_the_crate_again_leaves_the_files_and_the_build_cache_alone() {
+  fn building_again_starts_clean_and_keeps_only_the_build_cache_and_the_lock_file() {
     let output_dir = output_dir("rebuild");
-    let crate_dir = generate_instrument_crate(&golden_synth(), &output_dir).unwrap().crate_dir;
+    let crate_dir = build_instrument(&golden_synth(), &output_dir).unwrap().crate_dir;
     fs::create_dir_all(crate_dir.join("target")).unwrap();
     fs::write(crate_dir.join("target/cached"), "build output").unwrap();
+    let lock_before = fs::read(crate_dir.join("Cargo.lock")).expect("cargo metadata writes the lock file");
+    fs::write(crate_dir.join("src/stale.rs"), "// stale").unwrap();
     let patch_before = fs::read(crate_dir.join("src/patch.rs")).unwrap();
 
-    generate_instrument_crate(&golden_synth(), &output_dir).unwrap();
+    build_instrument(&golden_synth(), &output_dir).unwrap();
 
     assert_eq!(fs::read(crate_dir.join("src/patch.rs")).unwrap(), patch_before, "the output is deterministic");
+    assert!(!crate_dir.join("src/stale.rs").exists());
     assert_eq!(fs::read_to_string(crate_dir.join("target/cached")).unwrap(), "build output");
+    assert_eq!(fs::read(crate_dir.join("Cargo.lock")).unwrap(), lock_before);
+  }
+
+  #[test]
+  fn a_failed_build_leaves_no_patch_rs_of_an_earlier_build() {
+    let output_dir = output_dir("failed-rebuild");
+    let crate_dir = build_instrument(&golden_synth(), &output_dir).unwrap().crate_dir;
+    let broken = golden_synth_with_patch("failed-rebuild", |patch| patch.replace("kahuna-std/sine", "kahuna-std/does-not-exist"));
+
+    let error = build_instrument(&broken, &output_dir).unwrap_err();
+
+    assert!(format!("{error:#}").contains("kahuna-std/does-not-exist"));
+    assert!(!crate_dir.join("src/patch.rs").exists());
+    assert!(!crate_dir.join("src/main.rs").exists());
+  }
+
+  #[test]
+  fn an_unparsable_patch_leaves_an_earlier_build_untouched() {
+    let output_dir = output_dir("unparsable-rebuild");
+    let crate_dir = build_instrument(&golden_synth(), &output_dir).unwrap().crate_dir;
+    let broken = golden_synth_with_patch("unparsable-rebuild", |_| "not json".to_string());
+
+    assert!(build_instrument(&broken, &output_dir).is_err());
+
+    assert!(crate_dir.join("src/patch.rs").is_file());
+  }
+
+  #[test]
+  fn refuses_to_build_into_a_rust_directory_that_was_not_generated() {
+    let output_dir = output_dir("foreign");
+    fs::create_dir_all(output_dir.join("rust")).unwrap();
+    fs::write(output_dir.join("rust/Cargo.toml"), "[package]\nname = \"mine\"\n").unwrap();
+
+    let error = build_instrument(&golden_synth(), &output_dir).unwrap_err();
+
+    assert!(format!("{error:#}").contains("Refusing to clean"), "{error:#}");
+    assert!(output_dir.join("rust/Cargo.toml").is_file());
   }
 
   /// Slow: needs the toolchain's dependencies (cpal, midir) and, on Linux, the ALSA headers
@@ -196,7 +242,7 @@ mod tests {
   #[test]
   #[ignore = "runs cargo check on the generated crate"]
   fn the_generated_crate_of_the_golden_instrument_passes_cargo_check() {
-    let generated = generate_instrument_crate(&golden_synth(), &output_dir("cargo-check")).unwrap();
+    let generated = build_instrument(&golden_synth(), &output_dir("cargo-check")).unwrap();
     let manifest = generated.crate_dir.join("Cargo.toml");
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
 

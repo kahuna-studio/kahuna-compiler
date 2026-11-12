@@ -2,26 +2,47 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use eyre::{eyre, Result, WrapErr};
+use std::process::ExitCode;
 use kahuna_compiler::api::write_library_manifest;
 use kahuna_compiler::database::CompilerDatabase;
 use kahuna_compiler::inputs::{load_workspace, INSTRUMENT_FILE};
+use kahuna_compiler::pipeline::{build_instrument, GENERATED_DIR};
 use kahuna_compiler::runner::run;
 use notify_debouncer_mini::notify::RecursiveMode;
 use std::sync::mpsc;
 
-/// Compiles a Kahuna instrument and recompiles on file changes.
+/// Compiles Kahuna instruments.
+///
+/// An instrument is a directory with `instrument.toml` and `patch.json`. Compiling it generates a
+/// Rust project in `.kahuna/rust/` inside that directory; `.kahuna/` is disposable and not meant to
+/// be committed.
 #[derive(Parser)]
-#[command(version, about, args_conflicts_with_subcommands = true)]
+#[command(version, about)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
-
-    /// Directory containing instrument.toml
-    instrument_dir: Option<PathBuf>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Generates the Rust project of an instrument in <instrument_dir>/.kahuna/rust
+    ///
+    /// Reads instrument.toml and patch.json, checks the patch against the units of kahuna-std and
+    /// writes Cargo.toml, src/lib.rs, src/patch.rs and src/main.rs. Whatever an earlier build left
+    /// in the project is removed first, except cargo's target/ and Cargo.lock.
+    Build {
+        /// Directory containing instrument.toml and patch.json
+        instrument_dir: PathBuf,
+
+        /// Directory for the generated files instead of <instrument_dir>/.kahuna
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+    },
+    /// Checks an instrument and checks it again whenever its files change
+    Watch {
+        /// Directory containing instrument.toml
+        instrument_dir: PathBuf,
+    },
     /// Writes kahuna-library.json for a unit library by reading its source, without compiling it
     Manifest {
         /// Directory containing the library's Cargo.toml
@@ -29,17 +50,39 @@ enum Command {
     },
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match (cli.command, cli.instrument_dir) {
-        (Some(Command::Manifest { library_dir }), _) => {
+fn main() -> ExitCode {
+    match run_command(Cli::parse().command) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_command(command: Command) -> Result<()> {
+    match command {
+        Command::Build { instrument_dir, output_dir } => build(instrument_dir, output_dir),
+        Command::Watch { instrument_dir } => compile_and_watch(instrument_dir),
+        Command::Manifest { library_dir } => {
             let path = write_library_manifest(&library_dir)?;
             println!("✓ Wrote {}", path.display());
             Ok(())
         }
-        (None, Some(instrument_dir)) => compile_and_watch(instrument_dir),
-        (None, None) => Err(eyre!("Expected an instrument directory or a command; see --help")),
     }
+}
+
+fn build(instrument_dir: PathBuf, output_dir: Option<PathBuf>) -> Result<()> {
+    let instrument_dir = resolve_base_dir(instrument_dir)?;
+    let output_dir = output_dir.unwrap_or_else(|| instrument_dir.join(GENERATED_DIR));
+
+    let report = build_instrument(&instrument_dir, &output_dir)?;
+
+    for warning in &report.unsupported_units {
+        eprintln!("warning: {warning}");
+    }
+    println!("✓ Generated crate for '{}' in {}", report.instrument_name, report.crate_dir.display());
+    Ok(())
 }
 
 fn compile_and_watch(instrument_dir: PathBuf) -> Result<()> {
