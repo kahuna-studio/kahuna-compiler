@@ -4,7 +4,7 @@ The compiler of [Kahuna Studio](https://codeberg.org/kahuna-studio/kahuna-studio
 electronic instruments by patching and exporting them as plugins or standalone programs. The Studio's readme has the
 vision. This repository holds what is relevant for compiling.
 
-The compiler turns a Kahuna instrument into a Rust crate that compiles to a standalone program, using units from Kahuna 
+The compiler turns a Kahuna instrument into a Rust crate that compiles to a standalone program, using units from Kahuna
 libraries. Plugin targets are planned.
 
 ---
@@ -15,8 +15,9 @@ What works today:
 
 - **Instrument compilation.** `kahuna-compiler build` turns an instrument directory (`instrument.toml` and
   `patch.json`) into a Rust crate: a `Patch` type with the processing code for the whole graph, including polyphonic
-  voice regions, and a `main.rs` that runs it with MIDI input and audio output. The crate compiles into a standalone
-  executable.
+  voice regions, and a `main.rs` that runs it with MIDI input and audio output. `build` then runs
+  `cargo build --release` on the crate and copies the standalone executable to `.kahuna/bin/<name>`. An instrument
+  without a `.gitignore` gets one that ignores `.kahuna/`.
 - **Validation.** The patch is checked against the unit catalog. An unknown unit is reported with the node and the
   unit it names; nothing is generated from a patch that does not pass.
 - **Kahuna libraries.** Units are plain Rust, declared with the attribute macros `#[kahuna_module]`,
@@ -33,7 +34,6 @@ What works today:
 
 Not yet there, roughly in the order I intend to tackle it:
 
-- `build` running `cargo build` itself and delivering the executable.
 - Plugin targets (VST3, CLAP) through `nice-plug`, the successor of nih-plug, with exposed parameters for host
   automation.
 - Instruments that use libraries other than `kahuna-std`, listed in `instrument.toml`.
@@ -67,7 +67,8 @@ frequency) and value operators (multiply, mix, scale).
 kahuna-compiler build my-synth/
 ```
 
-writes the crate to `my-synth/.kahuna/rust/`. Everything in `.kahuna/` is generated and can be deleted at any time.
+writes the crate to `my-synth/.kahuna/rust/`, builds it with cargo and puts the executable in
+`my-synth/.kahuna/bin/`. Everything in `.kahuna/` is generated and can be deleted at any time.
 
 ---
 
@@ -78,11 +79,15 @@ You need a Rust toolchain. On Linux, `kahuna-runtime` needs the ALSA headers (`s
 ```
 cargo run -p kahuna-compiler -- build kahuna-compiler/tests/fixtures/instruments/golden-synth \
   --output-dir /tmp/golden-synth
-cargo build --release --manifest-path /tmp/golden-synth/rust/Cargo.toml
 ```
 
-The golden synth is a polyphonic sine oscillator with a gate envelope. `kahuna-compiler --help` lists the other
-commands: `watch` and `manifest`, which writes the manifest of a unit library.
+The golden synth is a polyphonic sine oscillator with a gate envelope. `--output-dir` keeps the generated files out of
+the repository; without it they go to `.kahuna/` in the instrument directory. The first build compiles all
+dependencies and takes a few minutes. When it is done, `build` prints where the executable is
+(`/tmp/golden-synth/bin/golden-synth`) and how to run it.
+
+`kahuna-compiler --help` lists the other commands: `watch` and `manifest`, which writes the manifest of a unit
+library.
 
 ---
 

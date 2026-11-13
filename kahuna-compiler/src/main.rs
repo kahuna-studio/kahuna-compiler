@@ -14,8 +14,8 @@ use std::sync::mpsc;
 /// Compiles Kahuna instruments.
 ///
 /// An instrument is a directory with `instrument.toml` and `patch.json`. Compiling it generates a
-/// Rust project in `.kahuna/rust/` inside that directory and builds it into an executable;
-/// `.kahuna/` is disposable and not meant to be committed.
+/// Rust project in `.kahuna/rust/` inside that directory and builds it into an executable in
+/// `.kahuna/bin/`; `.kahuna/` is disposable and not meant to be committed.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -29,9 +29,11 @@ enum Command {
     ///
     /// Reads instrument.toml and patch.json, checks the patch against the units of kahuna-std,
     /// writes the project (Cargo.toml, src/lib.rs, src/patch.rs, src/main.rs) and runs
-    /// `cargo build --release` on it; cargo's output is shown while it runs. Whatever an earlier
-    /// build left in the project is removed first, except cargo's target/ and Cargo.lock. Uses the
-    /// cargo in the CARGO environment variable, or else the one on the PATH.
+    /// `cargo build --release` on it; cargo's output is shown while it runs. The executable is
+    /// copied to <instrument_dir>/.kahuna/bin/<name>. Whatever an earlier build left in the project
+    /// is removed first, except cargo's target/ and Cargo.lock; the executable of an earlier build
+    /// stays when the build fails. An instrument without a .gitignore gets one that ignores
+    /// .kahuna/. Uses the cargo in the CARGO environment variable, or else the one on the PATH.
     Build {
         /// Directory containing instrument.toml and patch.json
         instrument_dir: PathBuf,
@@ -83,7 +85,8 @@ fn build(instrument_dir: PathBuf, output_dir: Option<PathBuf>) -> Result<()> {
     for warning in &report.unsupported_units {
         eprintln!("warning: {warning}");
     }
-    println!("✓ Built '{}': {}", report.instrument_name, report.executable.display());
+    println!("✓ Built '{}': {}", report.instrument_name, report.artifact.display());
+    println!("Run it with: {}", report.artifact.display());
     Ok(())
 }
 
