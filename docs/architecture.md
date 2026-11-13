@@ -2,8 +2,13 @@
 
 ## Overview
 
-Kahuna compiles a patch — a graph of modules and converters — into a generated Rust crate. That crate can run
-directly inside the Kahuna IDE, or be compiled further into a VST3/CLAP plugin or a standalone application.
+Kahuna compiles a patch — a graph of modules and converters — into a generated Rust crate, and that crate into a
+standalone application. The goal is to run the crate directly inside Kahuna Studio as well, and to compile it into a
+VST3/CLAP plugin. Kahuna Studio, the graphical application, is developed in a separate repository.
+
+Next to this pipeline, the repository contains the front end of the Kahuna language (grammar, parser, AST,
+serializers; see [language documentation](language/01-modules.md)). It is not connected to code generation yet:
+units are Rust code, declared with attribute macros, and patches are JSON.
 
 ## Model
 
@@ -17,7 +22,7 @@ directly inside the Kahuna IDE, or be compiled further into a VST3/CLAP plugin o
 - **Unit** — a module, a converter, or a value operator. Used where something applies to all of them without
   distinguishing them.
 - **Patch** — a graph that wires units together, using I/O nodes to connect to the outside world.
-- **Parameter definition** — one value exposed for host automation: name, type, range. Hand-maintained; the
+- **Parameter definition** (planned) — one value exposed for host automation: name, type, range. Hand-maintained; the
   compiler can suggest a starting set from a patch's unconnected ports and the parameters a library manifest
   declares for a unit, but the authored file is the source of truth, not something continuously derived.
 - **Library** (unit library) — a collection of units that is distributed and versioned together, e.g. `kahuna-std`,
@@ -28,7 +33,7 @@ directly inside the Kahuna IDE, or be compiled further into a VST3/CLAP plugin o
 
 Cardinalities:
 
-- An instrument has exactly one patch and exactly one parameters file.
+- An instrument has exactly one patch (and, once parameters are supported, exactly one parameters file).
 - A patch wires together units (zero units would be possible but quite useless).
 - Every unit belongs to exactly one library and has exactly one entry in that library's manifest.
 - A library has exactly one manifest and one or more units.
@@ -40,8 +45,8 @@ An instrument lives in a directory:
 
 ```
 my-synth/                   instrument directory
-  instrument.toml           metadata: name, vendor, version, targets, [libraries]
-  parameters.json           hand-maintained parameter definitions
+  instrument.toml           metadata: name, vendor, version, [libraries] (not supported yet)
+  parameters.json           hand-maintained parameter definitions (planned)
   patch.json                patch graph
   .kahuna/                  generated, regenerated on every compile, not committed
     rust/                   the generated Rust project (Cargo.toml, src/, target/)
@@ -49,10 +54,10 @@ my-synth/                   instrument directory
 ```
 
 There is no Rust in the instrument directory. Units come from libraries, which live anywhere on disk or in a
-repository, and an IDE works the same way wherever they are.
+repository, and the Studio works the same way wherever they are.
 
 `instrument.toml` is simple, flat, hand-written metadata. `patch.json` and `parameters.json` are
-both structured and both touched by tooling (the IDE writes patches; the compiler can seed parameter
+both structured and both touched by tooling (the Studio writes patches; the compiler can seed parameter
 suggestions).
 
 A library is any Rust library crate that provides one or more units and a manifest — a private collection shared
@@ -68,24 +73,28 @@ implicit dependency, without listing it.
 Kahuna's compiler is a CLI tool, installed separately from any one instrument. Compiling one looks like:
 
 ```
-kahuna compile my-synth/ vst3
+kahuna-compiler build my-synth/
 ```
 
-1. The compiler reads `instrument.toml`, `patch.json`, and `parameters.json`.
-2. It locates every library — `kahuna-std` and those listed under `[libraries]` — via `cargo metadata`, and
-   reads their manifests.
-3. It validates `parameters.json` against the patch and the collected manifests: no entry may reference a port
-   that's actually wired elsewhere in the graph, or a unit parameter that doesn't exist in that unit's manifest.
-4. It generates a crate with the name of the instrument (`{instrument}`) in `.kahuna/rust/`: the compiled patch, plus
-   `PatchParameters` (live atomic handles) and the `PARAMETERS` const (static descriptors) — both derived from
-   `parameters.json` — depending on every library.
-5. For a plugin or standalone target, it also generates `{instrument}-plugin`, wrapping `{instrument}` via
-   `nice-plug`.
-6. `cargo build` compiles the generated crate into the requested artifact: a `.vst3`/`.clap` bundle, or a
-   standalone binary.
+1. The compiler reads `instrument.toml` and `patch.json`.
+2. It empties `.kahuna/rust/`, except cargo's `target/` and `Cargo.lock`.
+3. It locates every library (`kahuna-std` for now) via `cargo metadata`, and reads their manifests.
+4. It validates the patch against the collected manifests and generates `patch.rs`.
+5. It writes a crate with the name of the instrument to `.kahuna/rust/`: `Cargo.toml`, `src/lib.rs` (the patch as
+   a module), `src/patch.rs` and `src/main.rs` (a standalone executable with MIDI input and audio output).
 
-Playing an instrument inside the IDE follows the same steps 1–4, but stops there — the IDE loads `{instrument}`
-directly, in-process, without a plugin wrapper or packaging step.
+`--output-dir` puts the generated files somewhere other than `.kahuna/`. `cargo build` on the generated crate
+produces the executable; `build` does not run it yet.
+
+Planned, in this order:
+
+- `build` runs `cargo build` and copies the executable to `.kahuna/bin/{name}`.
+- A parameters file, validated against the patch and the manifests, and `PatchParameters` / `PARAMETERS` generated
+  from it.
+- Plugin and standalone targets: a generated `{instrument}-plugin` crate that wraps `{instrument}` via `nice-plug`,
+  built into a `.vst3`/`.clap` bundle.
+- Playing an instrument inside the Studio: the Studio loads `{instrument}` directly, in-process, without a plugin
+  wrapper or packaging step.
 
 ## Why
 
@@ -124,7 +133,7 @@ doesn't verify this itself; keeping manifests current is left to the library's o
 **Units are referenced by id, not by Rust path.** An id defaults to the struct name in kebab-case
 (`AdsrEnvelope` → `adsr-envelope`) and can be pinned with `#[kahuna_module(id = "...")]`, so renaming or moving a
 struct doesn't have to break existing patches. Ids are short names that match `[a-z][a-z0-9]*(-[a-z0-9]+)*`
-(`to-freq`, `adsr`), because the IDE builds node ids from them (`to-freq_0`), and an id is unique within its library:
+(`to-freq`, `adsr`), because the Studio builds node ids from them (`to-freq_0`), and an id is unique within its library:
 the compiler rejects a `kahuna-library.json` that uses one twice. Where two libraries of an instrument have a unit with
 the same id, the catalog gives both a short name with the library and an underscore as prefix (`kahuna-std_sine`,
 `my-effects_sine`); references in patches always carry the library, so they stay `kahuna-std/sine` and
@@ -145,7 +154,8 @@ DAW's buffer callback or by `cpal` directly — that's decided entirely in `{ins
 | `kahuna-unit`         | `#[kahuna_module]`, `#[kahuna_converter]`, `#[kahuna_value_operator]` macros |
 | `kahuna-unit-syntax`  | Parser for unit declarations, shared by the macro and the compiler    |
 | `kahuna-std`          | Ready-made units, importable like any other library                   |
-| `kahuna-plugin`       | Bridges `{instrument}` to `nice-plug`                                 |
+| `kahuna-compiler`     | CLI and library: instrument compiler, language front end              |
+| `kahuna-plugin`       | Planned: bridges `{instrument}` to `nice-plug`                        |
 | `kahuna-runtime`      | Audio/MIDI I/O for the standalone target                              |
 | `{instrument}`        | Generated: the compiled patch                                         |
-| `{instrument}-plugin` | Generated: the `nice-plug` wrapper, for plugin and standalone targets |
+| `{instrument}-plugin` | Planned, generated: the `nice-plug` wrapper for plugin targets        |

@@ -1,32 +1,104 @@
-Welcome to my personal audio playground — a space where I explore ideas around designing an audio DSL, building tools 
-around it, and seeing how far curiosity can take the whole system.
+# Kahuna Compiler
+
+The compiler of [Kahuna Studio](https://codeberg.org/kahuna-studio/kahuna-studio), the application for building
+electronic instruments by patching and exporting them as plugins or standalone programs. The Studio's readme has the
+vision. This repository holds what is relevant for compiling.
+
+The compiler turns a Kahuna instrument into a Rust crate that compiles to a standalone program, using units from Kahuna 
+libraries. Plugin targets are planned.
 
 ---
 
-# Kahuna Studio
+## Current state
 
-Kahuna Studio is a workspace for building interactive audio instruments in its very early state.
+What works today:
+
+- **Instrument compilation.** `kahuna-compiler build` turns an instrument directory (`instrument.toml` and
+  `patch.json`) into a Rust crate: a `Patch` type with the processing code for the whole graph, including polyphonic
+  voice regions, and a `main.rs` that runs it with MIDI input and audio output. The crate compiles into a standalone
+  executable.
+- **Validation.** The patch is checked against the unit catalog. An unknown unit is reported with the node and the
+  unit it names; nothing is generated from a patch that does not pass.
+- **Kahuna libraries.** Units are plain Rust, declared with the attribute macros `#[kahuna_module]`,
+  `#[kahuna_converter]` and `#[kahuna_value_operator]`. A library publishes a `kahuna-library.json` manifest with the
+  ports of its units. The compiler generates that manifest from the library's source, using the same parser as the
+  macros, so both agree on what a unit looks like.
+- **Standard library.** `kahuna-std` has a sine oscillator, an ADSR envelope, MIDI converters, and arithmetic,
+  comparison and mixing operators.
+- **Watch mode.** `kahuna-compiler watch` rechecks an instrument whenever its files change. It is built on
+  [salsa](https://github.com/salsa-rs/salsa), so only what a changed file affects is recomputed.
+- **Kahuna source code, front end.** A [pest](https://pest.rs) grammar with an indentation preprocessor, a Pratt parser
+  for expressions, an AST, and serializers that write the AST back as Kahuna source and as JSON. It is documented in
+  [docs/language](docs/language/01-modules.md).
+
+Not yet there, roughly in the order I intend to tackle it:
+
+- `build` running `cargo build` itself and delivering the executable.
+- Plugin targets (VST3, CLAP) through `nice-plug`, the successor of nih-plug, with exposed parameters for host
+  automation.
+- Instruments that use libraries other than `kahuna-std`, listed in `instrument.toml`.
+- Generating Rust from Kahuna source code. Units are written in Rust directly for now.
 
 ---
 
-This repository contains the compiler of the programming language that is used in Kahuna Studio: Kahuna.
-It also contains the documentation of the language.
+## A personal playground
 
-Please find and introduction to Kahuna Studio in the main repository: [Kahuna Studio](https://codeberg.org/kahuna-studio/kahuna-studio).
+Kahuna is my personal audio playground: a place to explore how far a toolchain for electronic instruments can go,
+from a language for describing signal processing to instruments that run as standalone programs and, later, as
+plugins. It started as the design of an audio DSL and a compiler for it, and a good part of that work is in this
+repository. There is no fixed roadmap; the list above is the direction I am heading in at the moment.
 
 ---
 
-## Language Documentation
+## What an instrument is
 
-[Modules](docs/language/01-modules.md) \
-[Ports](docs/language/02-ports.md) \
-[Streams](docs/language/03-streams.md) \
-[Projections](docs/language/04-projections.md) \
-[Patches](docs/language/05-patches.md) \
-[Basics](docs/language/06-basics.md) \
-[Types](docs/language/08-types.md) \
-[Functions](docs/language/09-functions.md) \
-[Visibility](docs/language/10-visibility.md)
+An instrument is a directory with two files and no code:
+
+```
+my-synth/
+  instrument.toml     name, vendor, version
+  patch.json          the patch graph: units, and the cables between them
+```
+
+The patch wires together units: modules (oscillators, envelopes, filters), converters (a MIDI event stream into a
+frequency) and value operators (multiply, mix, scale).
+
+```
+kahuna-compiler build my-synth/
+```
+
+writes the crate to `my-synth/.kahuna/rust/`. Everything in `.kahuna/` is generated and can be deleted at any time.
+
+---
+
+## Try it
+
+You need a Rust toolchain. On Linux, `kahuna-runtime` needs the ALSA headers (`sudo apt install libasound2-dev`).
+
+```
+cargo run -p kahuna-compiler -- build kahuna-compiler/tests/fixtures/instruments/golden-synth \
+  --output-dir /tmp/golden-synth
+cargo build --release --manifest-path /tmp/golden-synth/rust/Cargo.toml
+```
+
+The golden synth is a polyphonic sine oscillator with a gate envelope. `kahuna-compiler --help` lists the other
+commands: `watch` and `manifest`, which writes the manifest of a unit library.
+
+---
+
+## Crates
+
+| Crate                | Role                                                            |
+|----------------------|-----------------------------------------------------------------|
+| `kahuna-compiler`    | CLI and library: instrument compiler, language front end        |
+| `kahuna-core`        | Unit and patch abstractions, stream and port types              |
+| `kahuna-unit`        | The `#[kahuna_*]` attribute macros                              |
+| `kahuna-unit-syntax` | Parser for unit declarations, shared by macros and compiler     |
+| `kahuna-std`         | Standard unit library                                           |
+| `kahuna-runtime`     | Audio (cpal) and MIDI (midir) I/O for standalone instruments   |
+| `golden_output`      | Hand-written instrument that the generated code is compared to  |
+
+More background is in [docs/architecture.md](docs/architecture.md).
 
 ---
 
