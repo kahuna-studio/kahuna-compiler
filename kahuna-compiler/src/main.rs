@@ -14,8 +14,8 @@ use std::sync::mpsc;
 /// Compiles Kahuna instruments.
 ///
 /// An instrument is a directory with `instrument.toml` and `patch.json`. Compiling it generates a
-/// Rust project in `.kahuna/rust/` inside that directory; `.kahuna/` is disposable and not meant to
-/// be committed.
+/// Rust project in `.kahuna/rust/` inside that directory and builds it into an executable;
+/// `.kahuna/` is disposable and not meant to be committed.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -25,11 +25,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Generates the Rust project of an instrument in <instrument_dir>/.kahuna/rust
+    /// Builds an instrument into an executable, via a Rust project in <instrument_dir>/.kahuna/rust
     ///
-    /// Reads instrument.toml and patch.json, checks the patch against the units of kahuna-std and
-    /// writes Cargo.toml, src/lib.rs, src/patch.rs and src/main.rs. Whatever an earlier build left
-    /// in the project is removed first, except cargo's target/ and Cargo.lock.
+    /// Reads instrument.toml and patch.json, checks the patch against the units of kahuna-std,
+    /// writes the project (Cargo.toml, src/lib.rs, src/patch.rs, src/main.rs) and runs
+    /// `cargo build --release` on it; cargo's output is shown while it runs. Whatever an earlier
+    /// build left in the project is removed first, except cargo's target/ and Cargo.lock. Uses the
+    /// cargo in the CARGO environment variable, or else the one on the PATH.
     Build {
         /// Directory containing instrument.toml and patch.json
         instrument_dir: PathBuf,
@@ -81,7 +83,7 @@ fn build(instrument_dir: PathBuf, output_dir: Option<PathBuf>) -> Result<()> {
     for warning in &report.unsupported_units {
         eprintln!("warning: {warning}");
     }
-    println!("✓ Generated crate for '{}' in {}", report.instrument_name, report.crate_dir.display());
+    println!("✓ Built '{}': {}", report.instrument_name, report.executable.display());
     Ok(())
 }
 

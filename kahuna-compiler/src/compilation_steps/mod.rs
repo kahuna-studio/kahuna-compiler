@@ -10,3 +10,4 @@ pub mod patch_code_generator;
 pub mod library_manifest_generator;
 pub mod library_resolver;
 pub mod crate_writer;
+pub mod cargo_runner;
