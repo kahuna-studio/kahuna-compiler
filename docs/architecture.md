@@ -2,12 +2,12 @@
 
 ## Overview
 
-Kahuna compiles a patch — a graph of modules and converters — into a generated Rust crate, and that crate into a
+Kahuna Compiler compiles a patch — a graph of modules and converters — into a generated Rust crate, and that crate into a
 standalone application. The goal is to run the crate directly inside Kahuna Studio as well, and to compile it into a
 VST3/CLAP plugin. Kahuna Studio, the graphical application, is developed in a separate repository.
 
-Next to this pipeline, the repository contains the front end of the Kahuna language (grammar, parser, AST,
-serializers; see [language documentation](language/01-modules.md)). It is not connected to code generation yet:
+Next to this pipeline, the repository contains the front end for Kahuna source code (grammar, parser, AST,
+serializers; see [documentation](language/01-modules.md)). It is not connected to code generation yet:
 units are Rust code, declared with attribute macros, and patches are JSON.
 
 ## Model
@@ -82,13 +82,16 @@ kahuna-compiler build my-synth/
 4. It validates the patch against the collected manifests and generates `patch.rs`.
 5. It writes a crate with the name of the instrument to `.kahuna/rust/`: `Cargo.toml`, `src/lib.rs` (the patch as
    a module), `src/patch.rs` and `src/main.rs` (a standalone executable with MIDI input and audio output).
+6. It runs `cargo build --release` on the crate. Cargo's output is shown while it runs, and the executable is
+   taken from cargo's `compiler-artifact` message.
+7. It copies the executable to `.kahuna/bin/{name}`. A failed build leaves the executable of an earlier build in
+   place.
 
-`--output-dir` puts the generated files somewhere other than `.kahuna/`. `cargo build` on the generated crate
-produces the executable; `build` does not run it yet.
+`--output-dir` puts the generated files somewhere other than `.kahuna/`. An instrument that builds into the default
+`.kahuna/` and has no `.gitignore` gets one that ignores `.kahuna/`; an existing `.gitignore` is never edited.
 
 Planned, in this order:
 
-- `build` runs `cargo build` and copies the executable to `.kahuna/bin/{name}`.
 - A parameters file, validated against the patch and the manifests, and `PatchParameters` / `PARAMETERS` generated
   from it.
 - Plugin and standalone targets: a generated `{instrument}-plugin` crate that wraps `{instrument}` via `nice-plug`,
@@ -154,7 +157,7 @@ DAW's buffer callback or by `cpal` directly — that's decided entirely in `{ins
 | `kahuna-unit`         | `#[kahuna_module]`, `#[kahuna_converter]`, `#[kahuna_value_operator]` macros |
 | `kahuna-unit-syntax`  | Parser for unit declarations, shared by the macro and the compiler    |
 | `kahuna-std`          | Ready-made units, importable like any other library                   |
-| `kahuna-compiler`     | CLI and library: instrument compiler, language front end              |
+| `kahuna-compiler`     | CLI and library: instrument compiler, front end for Kahuna source              |
 | `kahuna-plugin`       | Planned: bridges `{instrument}` to `nice-plug`                        |
 | `kahuna-runtime`      | Audio/MIDI I/O for the standalone target                              |
 | `{instrument}`        | Generated: the compiled patch                                         |

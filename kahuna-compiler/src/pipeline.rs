@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, WrapErr};
 
 use crate::compilation_steps::cargo_runner::cargo_runner::{build_release, cargo_program};
+use crate::compilation_steps::output_files::output_files::{ensure_gitignore, install_executable};
 use crate::compilation_steps::crate_writer::crate_writer::{clean_project, crate_dir, write_crate};
 use crate::compilation_steps::instrument_file_parser::instrument_metadata::InstrumentMetadata;
 use crate::compilation_steps::library_resolver::library_resolver::{resolve_libraries, ResolvedLibraries};
@@ -77,21 +78,31 @@ pub struct BuildReport {
   pub instrument_name: String,
   /// `{output_dir}/rust`: the generated crate.
   pub crate_dir: PathBuf,
-  /// The standalone executable cargo built from the crate.
+  /// The copy of the executable in `{output_dir}/bin/{name}`: the file to start.
+  pub artifact: PathBuf,
+  /// The executable in cargo's own `target/` directory.
   pub executable: PathBuf,
   /// Units patches can't use yet, with the reason. Warnings, not errors.
   pub unsupported_units: Vec<String>,
 }
 
-/// Generates the crate with `generate_instrument_crate` and builds it with `cargo build --release`.
-/// Cargo's progress and compiler messages go to stderr while it runs. When the build fails, the
-/// error says where the generated code is, because that is what the compiler messages refer to.
+/// Generates the crate with `generate_instrument_crate`, builds it with `cargo build --release` and
+/// copies the executable to `{output_dir}/bin/{name}`. Cargo's progress and compiler messages go to
+/// stderr while it runs. When the build fails, the error says where the generated code is, because
+/// that is what the compiler messages refer to, and the executable of an earlier build stays.
+///
+/// An instrument that generates into the default `{instrument_dir}/.kahuna` and has no `.gitignore`
+/// gets one that ignores `.kahuna/`; an existing `.gitignore` is left alone.
 pub fn build_instrument(instrument_dir: &Path, output_dir: &Path) -> Result<BuildReport> {
   build_instrument_with_cargo(&cargo_program(), instrument_dir, output_dir)
 }
 
 fn build_instrument_with_cargo(cargo: &OsStr, instrument_dir: &Path, output_dir: &Path) -> Result<BuildReport> {
   let generated = generate_instrument_crate(instrument_dir, output_dir)?;
+  let output_dir = output_dir.canonicalize().wrap_err_with(|| format!("Cannot access {}", output_dir.display()))?;
+  if is_default_output_dir(instrument_dir, &output_dir) {
+    ensure_gitignore(instrument_dir)?;
+  }
   let executable = build_release(cargo, &generated.crate_dir, &generated.instrument_name).wrap_err_with(|| {
     format!(
       "Cannot build '{}': cargo failed on the generated crate. Errors refer to {}, generated from {}",
@@ -100,12 +111,18 @@ fn build_instrument_with_cargo(cargo: &OsStr, instrument_dir: &Path, output_dir:
       instrument_dir.join(PATCH_FILE).display()
     )
   })?;
+  let artifact = install_executable(&executable, &output_dir, &generated.instrument_name)?;
   Ok(BuildReport {
     instrument_name: generated.instrument_name,
     crate_dir: generated.crate_dir,
+    artifact,
     executable,
     unsupported_units: generated.unsupported_units,
   })
+}
+
+fn is_default_output_dir(instrument_dir: &Path, output_dir: &Path) -> bool {
+  instrument_dir.join(GENERATED_DIR).canonicalize().is_ok_and(|default| default == output_dir)
 }
 
 struct CompiledPatch {
@@ -290,19 +307,61 @@ mod tests {
       path
     }
 
-    const ARTIFACT: &str = r#"{"reason":"compiler-artifact","target":{"kind":["bin"],"name":"golden-synth"},"executable":"/built/golden-synth"}"#;
+    /// Builds "golden-synth" next to the fake cargo and reports it like cargo does.
+    const BUILDS_AN_EXECUTABLE: &str = r#"D=$(dirname "$0")
+printf 'built' > "$D/golden-synth"
+chmod +x "$D/golden-synth"
+echo "{\"reason\":\"compiler-artifact\",\"target\":{\"kind\":[\"bin\"],\"name\":\"golden-synth\"},\"executable\":\"$D/golden-synth\"}""#;
 
     #[test]
-    fn reports_the_executable_next_to_the_generated_crate() {
-      let cargo = fake_cargo("report", &format!("echo '{ARTIFACT}'"));
+    fn copies_the_executable_to_bin_and_reports_both_files() {
+      let cargo = fake_cargo("report", BUILDS_AN_EXECUTABLE);
       let output_dir = output_dir("report");
 
       let report = build_instrument_with_cargo(cargo.as_os_str(), &golden_synth(), &output_dir).unwrap();
 
       assert_eq!(report.instrument_name, "golden-synth");
       assert_eq!(report.crate_dir, output_dir.join("rust"));
-      assert_eq!(report.executable, Path::new("/built/golden-synth"));
+      assert_eq!(report.executable, cargo.parent().unwrap().join("golden-synth"));
+      assert_eq!(report.artifact, output_dir.canonicalize().unwrap().join("bin").join(format!("golden-synth{}", std::env::consts::EXE_SUFFIX)));
+      assert_eq!(fs::read_to_string(&report.artifact).unwrap(), "built");
       assert!(report.crate_dir.join("src/patch.rs").is_file());
+    }
+
+    #[test]
+    fn a_failed_build_leaves_the_executable_of_the_earlier_build() {
+      let output_dir = output_dir("keeps-artifact");
+      let working = fake_cargo("keeps-artifact", BUILDS_AN_EXECUTABLE);
+      let artifact = build_instrument_with_cargo(working.as_os_str(), &golden_synth(), &output_dir).unwrap().artifact;
+      let failing = fake_cargo("keeps-artifact-failing", "exit 101");
+
+      assert!(build_instrument_with_cargo(failing.as_os_str(), &golden_synth(), &output_dir).is_err());
+
+      assert_eq!(fs::read_to_string(artifact).unwrap(), "built");
+    }
+
+    #[test]
+    fn an_instrument_with_the_default_output_dir_gets_a_gitignore_unless_it_has_one() {
+      let cargo = fake_cargo("gitignore", BUILDS_AN_EXECUTABLE);
+      let without = golden_synth_with_patch("gitignore-without", |patch| patch.to_string());
+      let with = golden_synth_with_patch("gitignore-with", |patch| patch.to_string());
+      fs::write(with.join(".gitignore"), "target/\n").unwrap();
+
+      build_instrument_with_cargo(cargo.as_os_str(), &without, &without.join(GENERATED_DIR)).unwrap();
+      build_instrument_with_cargo(cargo.as_os_str(), &with, &with.join(GENERATED_DIR)).unwrap();
+
+      assert_eq!(fs::read_to_string(without.join(".gitignore")).unwrap(), ".kahuna/\n");
+      assert_eq!(fs::read_to_string(with.join(".gitignore")).unwrap(), "target/\n");
+    }
+
+    #[test]
+    fn an_instrument_with_another_output_dir_gets_no_gitignore() {
+      let cargo = fake_cargo("no-gitignore", BUILDS_AN_EXECUTABLE);
+      let instrument = golden_synth_with_patch("no-gitignore", |patch| patch.to_string());
+
+      build_instrument_with_cargo(cargo.as_os_str(), &instrument, &output_dir("no-gitignore-out")).unwrap();
+
+      assert!(!instrument.join(".gitignore").exists());
     }
 
     #[test]
@@ -338,7 +397,8 @@ mod tests {
     let report = build_instrument(&golden_synth(), &output_dir("real-build")).unwrap();
 
     assert!(report.executable.is_file(), "{}", report.executable.display());
-    assert!(report.executable.file_name().unwrap().to_string_lossy().starts_with("golden-synth"));
+    assert!(report.artifact.is_file(), "{}", report.artifact.display());
+    assert!(report.artifact.ends_with(format!("bin/golden-synth{}", std::env::consts::EXE_SUFFIX)));
   }
 
   /// Slow: needs the toolchain's dependencies (cpal, midir) and, on Linux, the ALSA headers
