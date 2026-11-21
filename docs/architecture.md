@@ -149,6 +149,34 @@ doesn't break anything.
 **IO nodes are the one thing that varies between targets.** `{instrument}` never knows whether it's driven by a
 DAW's buffer callback or by `cpal` directly — that's decided entirely in `{instrument}-plugin`.
 
+## Runtime
+
+`kahuna-runtime` runs a compiled `Patch` on the audio output and MIDI input of the system. It has two layers, so
+that a host other than the generated `main.rs` can use it later:
+
+- `start(config, max_buffer_size, build_patch)` opens the devices, builds the patch with the device's sample
+  rate and starts playing. It returns a `RunningInstrument`; dropping it stops audio and MIDI. `RuntimeConfig`
+  selects the audio output and the MIDI input by exact device name, `None` is the system default.
+  `list_audio_outputs()` and `list_midi_inputs()` return the names to choose from.
+- `run_standalone(max_buffer_size, build_patch)` is what the generated `main.rs` calls: `start` with the default
+  config, then wait for one line on stdin (Enter, or a closed stdin) and stop.
+
+All failures are a `RuntimeError` with a message for the user (`No audio output device found`,
+`Audio output device 'X' not found. Available: A, B`, a sample format other than f32, errors of cpal and midir). The
+generated `main.rs` prints `Error: {error}` to stderr and exits with status 1. A missing MIDI device is not an error:
+the instrument starts and says on stderr that it is silent until a device is connected and the instrument is
+restarted. A MIDI port that was asked for by name and cannot be used is an error.
+
+The audio callback runs the patch in chunks of at most `max_buffer_size` frames, whatever size the device delivers,
+so a patch never gets more frames than it was built for. The buffer size of the stream is `max_buffer_size` where
+the device supports it, otherwise the device's own. The channel count comes from the device: mono gets the mix of
+left and right, more than two channels get left and right on the first two and silence on the rest. Startup is
+described on stderr (`[Audio] Device`, `Sample rate`, `Channels`, `Buffer size`, `[MIDI] Connected to`); while
+running, only audio stream errors are printed. MIDI note on, note on with velocity 0 (as note off) and note off are
+understood, on any channel.
+
+Known limitation: the audio callback and the patch's I/O nodes share the output buffer through a mutex.
+
 ## Crates reference
 
 | Crate                 | Role                                                                  |
@@ -159,6 +187,6 @@ DAW's buffer callback or by `cpal` directly — that's decided entirely in `{ins
 | `kahuna-std`          | Ready-made units, importable like any other library                   |
 | `kahuna-compiler`     | CLI and library: instrument compiler, front end for Kahuna source              |
 | `kahuna-plugin`       | Planned: bridges `{instrument}` to `nice-plug`                        |
-| `kahuna-runtime`      | Audio/MIDI I/O for the standalone target                              |
+| `kahuna-runtime`      | Starts and stops an instrument on audio and MIDI devices (standalone target) |
 | `{instrument}`        | Generated: the compiled patch                                         |
 | `{instrument}-plugin` | Planned, generated: the `nice-plug` wrapper for plugin targets        |

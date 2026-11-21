@@ -18,6 +18,11 @@ What works today:
   voice regions, and a `main.rs` that runs it with MIDI input and audio output. `build` then runs
   `cargo build --release` on the crate and copies the standalone executable to `.kahuna/bin/<name>`. An instrument
   without a `.gitignore` gets one that ignores `.kahuna/`.
+- **Standalone runtime.** The executable starts on the default audio output and MIDI input and plays what the MIDI
+  keyboard sends, until you press Enter. It adapts to the device: sample rate, channel count (mono, stereo or more)
+  and buffer size, and it prints what it runs on to stderr. Without an audio device, or with an unsupported one, it
+  exits with a one-line error and status 1 instead of a panic. Without a MIDI device it starts anyway and says that
+  it is silent until one is connected and the instrument is restarted.
 - **Validation.** The patch is checked against the unit catalog. An unknown unit is reported with the node and the
   unit it names; nothing is generated from a patch that does not pass.
 - **Kahuna libraries.** Units are plain Rust, declared with the attribute macros `#[kahuna_module]`,
@@ -84,7 +89,8 @@ cargo run -p kahuna-compiler -- build kahuna-compiler/tests/fixtures/instruments
 The golden synth is a polyphonic sine oscillator with a gate envelope. `--output-dir` keeps the generated files out of
 the repository; without it they go to `.kahuna/` in the instrument directory. The first build compiles all
 dependencies and takes a few minutes. When it is done, `build` prints where the executable is
-(`/tmp/golden-synth/bin/golden-synth`) and how to run it.
+(`/tmp/golden-synth/bin/golden-synth`) and how to run it. Connect a MIDI keyboard before you start it: the
+instrument is silent until you play, and a key press sounds a sine with an envelope. Press Enter to quit.
 
 `kahuna-compiler --help` lists the other commands: `watch` and `manifest`, which writes the manifest of a unit
 library.
@@ -100,7 +106,7 @@ library.
 | `kahuna-unit`        | The `#[kahuna_*]` attribute macros                              |
 | `kahuna-unit-syntax` | Parser for unit declarations, shared by macros and compiler     |
 | `kahuna-std`         | Standard unit library                                           |
-| `kahuna-runtime`     | Audio (cpal) and MIDI (midir) I/O for standalone instruments   |
+| `kahuna-runtime`     | Starts and stops an instrument on audio (cpal) and MIDI (midir) devices |
 | `golden_output`      | Hand-written instrument that the generated code is compared to  |
 
 More background is in [docs/architecture.md](docs/architecture.md).

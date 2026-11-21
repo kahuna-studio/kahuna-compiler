@@ -162,12 +162,20 @@ fn main_source(metadata: &InstrumentMetadata) -> String {
     "// {GENERATED_NOTICE}\n\
      \n\
      use kahuna_runtime::run_standalone;\n\
+     use std::process::ExitCode;\n\
      use {library}::patch::Patch;\n\
      \n\
-     fn main() {{\n\
-     \x20 run_standalone({MAX_BUFFER_SIZE}, |sample_rate, max_buffer_size, factory| {{\n\
+     fn main() -> ExitCode {{\n\
+     \x20 let result = run_standalone({MAX_BUFFER_SIZE}, |sample_rate, max_buffer_size, factory| {{\n\
      \x20   Patch::new(sample_rate, max_buffer_size, factory)\n\
      \x20 }});\n\
+     \x20 match result {{\n\
+     \x20   Ok(()) => ExitCode::SUCCESS,\n\
+     \x20   Err(error) => {{\n\
+     \x20     eprintln!(\"Error: {{error}}\");\n\
+     \x20     ExitCode::FAILURE\n\
+     \x20   }}\n\
+     \x20 }}\n\
      }}\n"
   )
 }
@@ -226,8 +234,11 @@ mod tests {
 
     let main = read(&crate_dir, "src/main.rs");
     assert!(main.contains("use my_synth::patch::Patch;"), "{main}");
+    assert!(main.contains("fn main() -> ExitCode {"), "{main}");
     assert!(main.contains("run_standalone(2048, |sample_rate, max_buffer_size, factory| {"), "{main}");
     assert!(main.contains("Patch::new(sample_rate, max_buffer_size, factory)"), "{main}");
+    assert!(main.contains("eprintln!(\"Error: {error}\");"), "{main}");
+    assert!(main.contains("ExitCode::FAILURE"), "{main}");
   }
 
   #[test]
