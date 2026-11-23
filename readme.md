@@ -95,6 +95,10 @@ instrument is silent until you play, and a key press sounds a sine with an envel
 `kahuna-compiler --help` lists the other commands: `watch` and `manifest`, which writes the manifest of a unit
 library.
 
+`cargo test` runs the fast tests. `cargo test -- --ignored` also builds the golden synth for real, twice (the second
+build must reuse the build cache), and starts the executable: with audio it must run until Enter, without audio it
+must exit with `Error: …` and status 1, never with a panic.
+
 ---
 
 ## Crates

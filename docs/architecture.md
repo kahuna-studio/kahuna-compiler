@@ -90,6 +90,11 @@ kahuna-compiler build my-synth/
 `--output-dir` puts the generated files somewhere other than `.kahuna/`. An instrument that builds into the default
 `.kahuna/` and has no `.gitignore` gets one that ignores `.kahuna/`; an existing `.gitignore` is never edited.
 
+The end-to-end test (`kahuna-compiler/tests/end_to_end.rs`) covers this chain with the golden instrument. The fast
+part compares the generated `patch.rs` with `tests/fixtures/instruments/golden-synth/expected-patch.rs`; a change to
+the generator that is intended means copying the new `patch.rs` over that file. The ignored part builds the instrument
+twice, checks that the second build reuses `.kahuna/rust/target`, and starts the executable (`cargo test -- --ignored`).
+
 Planned, in this order:
 
 - A parameters file, validated against the patch and the manifests, and `PatchParameters` / `PARAMETERS` generated
