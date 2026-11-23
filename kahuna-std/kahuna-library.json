@@ -124,6 +124,81 @@
       ]
     },
     {
+      "id": "saw",
+      "kind": "module",
+      "rust_path": "modules::saw_osc::SawOsc",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "frequency",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": true
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
+      "id": "square",
+      "kind": "module",
+      "rust_path": "modules::square_osc::SquareOsc",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "frequency",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "pulse_width",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": false,
+          "default": 0.5
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
+      "id": "triangle",
+      "kind": "module",
+      "rust_path": "modules::triangle_osc::TriangleOsc",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "frequency",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": true
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
       "id": "multiply",
       "kind": "value-operator",
       "rust_path": "value_operators::arithmetic::multiply",

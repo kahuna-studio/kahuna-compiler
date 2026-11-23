@@ -2,3 +2,6 @@
 
 pub mod adsr_envelope;
 pub mod sine_osc;
+pub mod saw_osc;
+pub mod square_osc;
+pub mod triangle_osc;
