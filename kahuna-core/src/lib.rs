@@ -129,7 +129,8 @@ impl PartialEq for ValueType {
 /// Static description of a port for the visual patch editor.
 ///
 /// `required`:
-/// - Parameter/Signal inputs: derived from `Option<T>` vs `T` in module source.
+/// - Parameter inputs: `Some(false)` with a `default` or when declared `Parameter<Option<T>>`, else `Some(true)`.
+/// - Signal inputs: always `Some(true)`.
 /// - Event inputs: always `Some(false)` — unconnected is a valid empty stream.
 /// - Outputs: always `None` — the concept doesn't apply to outputs.
 #[derive(Debug, Clone, PartialEq)]

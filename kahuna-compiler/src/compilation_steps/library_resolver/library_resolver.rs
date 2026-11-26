@@ -294,7 +294,7 @@ fn struct_unit_port_spec(port: &PortEntry) -> Result<PortSpec> {
     (StreamType::Parameter, "f32" | "Unipolar" | "Bipolar") => ValueKind::Float,
     (StreamType::Parameter, other) => bail!("parameter port '{}' has type '{other}', which patches don't support yet", port.name),
   };
-  // Only parameters with a default can stay unconnected; their constructor argument is an Option.
+  // Only parameters with a default or declared `Option<T>` can stay unconnected; their constructor argument is an Option.
   let arity = match (port.direction, stream_type, port.required) {
     (PortDirection::Input, StreamType::Parameter, Some(false)) => Arity::Optional,
     _ => Arity::Required,

@@ -138,6 +138,15 @@ patch-compile time — was rejected to avoid running arbitrary code just to reso
 manifest can fall out of sync with its library's code if the source changes without regenerating it. Kahuna
 doesn't verify this itself; keeping manifests current is left to the library's own CI/CD pipeline.
 
+**Optional parameters are declared in the type, not with a default.** A parameter input that has a sensible value
+when left alone takes `#[input(default = ...)]`, and `process()` never sees an `Option`. A parameter whose absence
+means something takes `Parameter<Option<T>>`: the manifest lists it with `required: false` and no `default`,
+and `process()` receives `None` when nothing is connected. The `filter` unit uses this for its two cutoffs: only
+`low_pass_cutoff` connected is a low pass, only `high_pass_cutoff` a high pass, both a band pass. The alternative, a mode
+parameter, was rejected because the library resolver only accepts `bool` and float parameters, and because wiring already
+says what the patch means. `Option` is accepted only on parameter inputs: signals and events have no "not connected"
+value that `process()` could branch on per block.
+
 **Units are referenced by id, not by Rust path.** An id defaults to the struct name in kebab-case
 (`AdsrEnvelope` → `adsr-envelope`) and can be pinned with `#[kahuna_module(id = "...")]`, so renaming or moving a
 struct doesn't have to break existing patches. Ids are short names that match `[a-z][a-z0-9]*(-[a-z0-9]+)*`

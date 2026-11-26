@@ -173,11 +173,11 @@ fn generate_input_port(port: &PortConfiguration) -> GeneratedPort {
 
     let (field_type, constructor_parameter_type, constructor_initializer) =
       match port.stream_kind {
-          StreamKind::Parameter => match &port.default_value {
+          StreamKind::Parameter => match (&port.default_value, port.optional) {
               // Has a default: the Inputs field stays a concrete T (never Option).
               // The constructor takes Option<T> and resolves the default itself,
               // so process() bodies never see an Option again.
-              Some(default_value) => {
+              (Some(default_value), _) => {
                   let default_expression = &default_value.expression;
                   (
                       quote! { #value_type },
@@ -185,7 +185,13 @@ fn generate_input_port(port: &PortConfiguration) -> GeneratedPort {
                       quote! { #field_identifier: #field_identifier.unwrap_or(#default_expression), },
                   )
               }
-              None => (
+              // Declared `Option<T>` without a default: process() decides what unconnected means.
+              (None, true) => (
+                  quote! { Option<#value_type> },
+                  quote! { Option<#value_type> },
+                  quote! { #field_identifier, },
+              ),
+              (None, false) => (
                   quote! { #value_type },
                   quote! { #value_type },
                   quote! { #field_identifier, },

@@ -10,6 +10,9 @@ pub struct PortConfiguration {
   pub rate_by_type: Option<Rate>,
   pub rate_override: Option<Rate>,
   pub default_value: Option<DefaultValue>,
+  /// Written `Parameter<Option<T>>`: the port may stay unconnected, and `process()` gets `None` then.
+  /// `value_type` is the `T`.
+  pub optional: bool,
   pub value_type: Type,
 }
 
@@ -22,7 +25,7 @@ impl PortConfiguration {
   pub fn required(&self) -> Option<bool> {
     match (self.direction, self.stream_kind) {
       (Direction::Output, _) => None,
-      (Direction::Input, StreamKind::Parameter) => Some(self.default_value.is_none()),
+      (Direction::Input, StreamKind::Parameter) => Some(self.default_value.is_none() && !self.optional),
       (Direction::Input, StreamKind::Signal) => Some(true),
       (Direction::Input, StreamKind::Event) => Some(false),
     }

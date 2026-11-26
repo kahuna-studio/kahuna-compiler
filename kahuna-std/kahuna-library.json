@@ -102,6 +102,53 @@
       ]
     },
     {
+      "id": "filter",
+      "kind": "module",
+      "rust_path": "modules::filter::Filter",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "input",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "high_pass_cutoff",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false
+        },
+        {
+          "direction": "input",
+          "name": "low_pass_cutoff",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false
+        },
+        {
+          "direction": "input",
+          "name": "resonance",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "Unipolar",
+          "required": false,
+          "default": 0.3
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
       "id": "sine",
       "kind": "module",
       "rust_path": "modules::sine_osc::SineOsc",

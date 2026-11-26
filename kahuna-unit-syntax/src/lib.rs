@@ -53,7 +53,7 @@ pub fn parse_unit<'a>(kind: UnitKind, input: &'a DeriveInput, attributes: &UnitA
 }
 
 /// A converter transforms one stream into another: exactly one input and one output, and the input
-/// has no default, since a converter without input has nothing to convert.
+/// is neither optional nor has a default, since a converter without input has nothing to convert.
 fn validate_converter_ports(input: &DeriveInput, ports: &[PortConfiguration]) -> syn::Result<()> {
     let count = |direction| ports.iter().filter(|port| port.direction == direction).count();
     if count(Direction::Input) != 1 || count(Direction::Output) != 1 {
@@ -62,8 +62,11 @@ fn validate_converter_ports(input: &DeriveInput, ports: &[PortConfiguration]) ->
             "#[kahuna_converter] needs exactly one #[input] and one #[output] field; use #[kahuna_module] for more",
         ));
     }
-    if let Some(port) = ports.iter().find(|port| port.default_value.is_some()) {
-        return Err(syn::Error::new_spanned(&port.identifier, "converter inputs cannot have a `default`"));
+    if let Some(port) = ports.iter().find(|port| port.default_value.is_some() || port.optional) {
+        return Err(syn::Error::new_spanned(
+            &port.identifier,
+            "converter inputs cannot have a `default` or be an `Option`",
+        ));
     }
     Ok(())
 }
@@ -155,6 +158,8 @@ fn parse_port(direction: Direction, field: &Field) -> syn::Result<PortConfigurat
         )),
     };
 
+    let (value_type, optional) = split_optional(value_type)?;
+
     let mut rate_override: Option<Rate> = None;
     let mut default_value: Option<DefaultValue> = None;
     if matches!(attribute.meta, syn::Meta::List(_)) {
@@ -187,6 +192,19 @@ fn parse_port(direction: Direction, field: &Field) -> syn::Result<PortConfigurat
         ));
     }
 
+    if optional && (stream_kind != StreamKind::Parameter || direction == Direction::Output) {
+        return Err(syn::Error::new_spanned(
+            field_type,
+            "`Option<T>` is only allowed in Parameter inputs, e.g. `Parameter<Option<f32>>`.",
+        ));
+    }
+    if optional && default_value.is_some() {
+        return Err(syn::Error::new_spanned(
+            attribute,
+            "a `default` already makes the port optional; use either it or `Option<T>`.",
+        ));
+    }
+
     Ok(PortConfiguration {
         direction,
         identifier: field_identifier,
@@ -194,8 +212,22 @@ fn parse_port(direction: Direction, field: &Field) -> syn::Result<PortConfigurat
         rate_by_type,
         rate_override,
         default_value,
+        optional,
         value_type,
     })
+}
+
+/// `Option<T>` becomes `(T, true)`, any other type is returned as it is.
+fn split_optional(value_type: Type) -> syn::Result<(Type, bool)> {
+    let Type::Path(type_path) = &value_type else {
+        return Ok((value_type, false));
+    };
+    match type_path.path.segments.last() {
+        Some(segment) if type_path.qself.is_none() && segment.ident == "Option" => {
+            Ok((extract_value_type(segment)?, true))
+        }
+        _ => Ok((value_type, false)),
+    }
 }
 
 fn parse_default_value(expression: Expr) -> syn::Result<DefaultValue> {
@@ -321,9 +353,39 @@ mod tests {
             "struct Conv { #[output] out: Parameter<f32> }",
             "struct Conv { #[input] a: Midi, #[input] b: Midi, #[output] out: Parameter<f32> }",
             "struct Conv { #[input(default = 1.0)] a: Parameter<f32>, #[output] out: Parameter<f32> }",
+            "struct Conv { #[input] a: Parameter<Option<f32>>, #[output] out: Parameter<f32> }",
         ] {
             let input = parse_struct(invalid);
             assert!(parse_unit(UnitKind::Converter, &input, &UnitAttributes::default()).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn option_parameter_is_optional_and_keeps_the_inner_value_type() {
+        let input = parse_struct("struct Unit { #[input] a: Parameter<Option<f32>>, #[input] b: Parameter<f32> }");
+        let module = parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).unwrap();
+
+        let optional = &module.ports[0];
+        assert!(optional.optional);
+        assert!(optional.default_value.is_none());
+        assert_eq!(optional.required(), Some(false));
+        assert_eq!(optional.value_type, syn::parse_str::<Type>("f32").unwrap());
+
+        let plain = &module.ports[1];
+        assert!(!plain.optional);
+        assert_eq!(plain.required(), Some(true));
+    }
+
+    #[test]
+    fn rejects_option_where_it_has_no_meaning() {
+        for invalid in [
+            "struct Unit { #[input] a: Signal<Option<f32>> }",
+            "struct Unit { #[input] a: Event<Option<f32>> }",
+            "struct Unit { #[output] a: Parameter<Option<f32>> }",
+            "struct Unit { #[input(default = 1.0)] a: Parameter<Option<f32>> }",
+        ] {
+            let input = parse_struct(invalid);
+            assert!(parse_unit(UnitKind::Module, &input, &UnitAttributes::default()).is_err(), "{invalid}");
         }
     }
 

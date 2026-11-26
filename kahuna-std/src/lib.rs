@@ -7,3 +7,4 @@ pub mod value_operators;
 /// DSP building blocks for writing units; not units themselves.
 pub mod phase_generators;
 pub mod poly_blep;
+pub mod state_variable_filter;
