@@ -102,6 +102,45 @@
       ]
     },
     {
+      "id": "band-pass",
+      "kind": "module",
+      "rust_path": "modules::band_pass::BandPass",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "input",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "center",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": true
+        },
+        {
+          "direction": "input",
+          "name": "bandwidth",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "f32",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
       "id": "filter",
       "kind": "module",
       "rust_path": "modules::filter::Filter",

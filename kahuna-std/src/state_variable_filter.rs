@@ -6,6 +6,8 @@ const MAX_CUTOFF_RATIO: f32 = 0.45;
 /// Damping at resonance 0 (Q = 0.5, no peak) and at resonance 1 (Q = 50, rings for a long time).
 const MAX_DAMPING: f32 = 2.0;
 const MIN_DAMPING: f32 = 0.02;
+const MIN_BANDWIDTH_OCTAVES: f32 = 0.05;
+const MAX_BANDWIDTH_OCTAVES: f32 = 4.0;
 const DENORMAL_THRESHOLD: f32 = 1e-20;
 
 /// Which of the filter's three outputs a block is read from.
@@ -42,9 +44,22 @@ impl StateVariableFilter {
         }
     }
 
-    /// Filters `buffer` in place. The band pass has unity gain at the cutoff, whatever the resonance.
+    /// Filters `buffer` in place, with the sharpness of the filter set by `resonance`.
+    /// The band pass has unity gain at the cutoff, whatever the resonance.
     pub fn process_in_place(&mut self, response: Response, cutoff_hz: f32, resonance: f32, buffer: &mut [f32]) {
-        let target = Coefficients::new(cutoff_hz, resonance, self.sample_rate);
+        let target = Coefficients::from_resonance(cutoff_hz, resonance, self.sample_rate);
+        self.process_towards(response, target, buffer);
+    }
+
+    /// Band-passes `buffer` in place around `center_hz`. The band is `bandwidth_octaves` wide between
+    /// its -3 dB edges, which lie `bandwidth_octaves / 2` octaves below and above the center,
+    /// so the width in octaves stays the same wherever the center moves.
+    pub fn process_band_pass_in_place(&mut self, center_hz: f32, bandwidth_octaves: f32, buffer: &mut [f32]) {
+        let target = Coefficients::from_bandwidth(center_hz, bandwidth_octaves, self.sample_rate);
+        self.process_towards(Response::BandPass, target, buffer);
+    }
+
+    fn process_towards(&mut self, response: Response, target: Coefficients, buffer: &mut [f32]) {
         let start = self.coefficients.unwrap_or(target);
         let progress_per_frame = 1.0 / buffer.len().max(1) as f32;
 
@@ -96,15 +111,30 @@ struct Coefficients {
 }
 
 impl Coefficients {
-    fn new(cutoff_hz: f32, resonance: f32, sample_rate: f32) -> Self {
+    fn from_resonance(cutoff_hz: f32, resonance: f32, sample_rate: f32) -> Self {
         // max/min instead of clamp: they swallow NaN, which would otherwise poison the filter state for good.
-        let cutoff = cutoff_hz.max(MIN_CUTOFF_HZ).min(sample_rate * MAX_CUTOFF_RATIO);
         let resonance = resonance.max(0.0).min(1.0);
 
         Self {
-            g: (PI * cutoff / sample_rate).tan(),
+            g: Self::warped_frequency(cutoff_hz, sample_rate),
             k: MAX_DAMPING - (MAX_DAMPING - MIN_DAMPING) * resonance,
         }
+    }
+
+    /// A band `n` octaves wide has Q = sqrt(2^n) / (2^n - 1), so the damping 1/Q is 2^(n/2) - 2^(-n/2).
+    fn from_bandwidth(center_hz: f32, bandwidth_octaves: f32, sample_rate: f32) -> Self {
+        let octaves = bandwidth_octaves.max(MIN_BANDWIDTH_OCTAVES).min(MAX_BANDWIDTH_OCTAVES);
+        let half_width = (octaves / 2.0).exp2();
+
+        Self {
+            g: Self::warped_frequency(center_hz, sample_rate),
+            k: half_width - 1.0 / half_width,
+        }
+    }
+
+    fn warped_frequency(frequency_hz: f32, sample_rate: f32) -> f32 {
+        let frequency = frequency_hz.max(MIN_CUTOFF_HZ).min(sample_rate * MAX_CUTOFF_RATIO);
+        (PI * frequency / sample_rate).tan()
     }
 
     fn lerp(self, other: Self, progress: f32) -> Self {
@@ -166,6 +196,47 @@ mod tests {
 
         assert!((settled_peak(&at_cutoff) - 1.0).abs() < 0.05);
         assert!(dc[FRAMES - 1].abs() < 1e-3);
+    }
+
+    fn band_passed(center_hz: f32, bandwidth_octaves: f32, input: &[f32]) -> Vec<f32> {
+        let mut filter = StateVariableFilter::new(SAMPLE_RATE);
+        let mut buffer = input.to_vec();
+        filter.process_band_pass_in_place(center_hz, bandwidth_octaves, &mut buffer);
+        buffer
+    }
+
+    #[test]
+    fn bandwidth_band_pass_has_its_edges_half_the_bandwidth_from_the_center() {
+        let minus_three_db = 1.0 / 2.0_f32.sqrt();
+
+        for (center, bandwidth) in [(500.0_f32, 1.0_f32), (2000.0, 1.0), (1000.0, 0.5), (1000.0, 2.0)] {
+            let half_width = (bandwidth / 2.0).exp2();
+            let at_center = settled_peak(&band_passed(center, bandwidth, &sine(center)));
+            let at_lower_edge = settled_peak(&band_passed(center, bandwidth, &sine(center / half_width)));
+            let at_upper_edge = settled_peak(&band_passed(center, bandwidth, &sine(center * half_width)));
+
+            assert!((at_center - 1.0).abs() < 0.05, "center {center}, bandwidth {bandwidth}: {at_center}");
+            assert!((at_lower_edge - minus_three_db).abs() < 0.06, "lower edge {center}/{bandwidth}: {at_lower_edge}");
+            assert!((at_upper_edge - minus_three_db).abs() < 0.06, "upper edge {center}/{bandwidth}: {at_upper_edge}");
+        }
+    }
+
+    #[test]
+    fn narrower_bandwidth_lets_less_pass_next_to_the_center() {
+        let next_to_center = sine(1500.0);
+        let wide = settled_peak(&band_passed(1000.0, 2.0, &next_to_center));
+        let narrow = settled_peak(&band_passed(1000.0, 0.25, &next_to_center));
+
+        assert!(narrow < wide);
+    }
+
+    #[test]
+    fn extreme_bandwidths_stay_finite() {
+        for bandwidth in [-1.0, 0.0, 1.0e9, f32::NAN] {
+            let output = band_passed(1000.0, bandwidth, &sine(440.0));
+
+            assert!(output.iter().all(|sample| sample.is_finite()), "bandwidth {bandwidth}");
+        }
     }
 
     #[test]

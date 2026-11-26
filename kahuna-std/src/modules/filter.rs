@@ -7,7 +7,7 @@ use kahuna_unit::kahuna_module;
 /// neither passes the signal through unchanged.
 ///
 /// The band pass is a high pass followed by a low pass: a flat window with independent edges, not
-/// a resonant peak around one center frequency. `resonance` applies to each edge.
+/// a resonant peak around one center frequency; for that, use `band-pass`. `resonance` applies to each edge.
 #[kahuna_module(id = "filter")]
 pub struct Filter {
     high_pass: StateVariableFilter,
