@@ -89,6 +89,14 @@ fn buffer_type(buffer: &BufferRef) -> TokenStream {
     (ValueKind::Float, Domain::Poly { .. }) => quote!(Vec<f32>),
     (ValueKind::Bool, Domain::Mono) => quote!(bool),
     (ValueKind::Bool, Domain::Poly { .. }) => quote!(Vec<bool>),
+    (ValueKind::Enum, Domain::Mono) => {
+      let (path, _) = enum_parts(buffer);
+      quote!(#path)
+    }
+    (ValueKind::Enum, Domain::Poly { .. }) => {
+      let (path, _) = enum_parts(buffer);
+      quote!(Vec<#path>)
+    }
     (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
@@ -114,6 +122,15 @@ fn buffer_initializer(buffer: &BufferRef) -> TokenStream {
     (ValueKind::Bool, Domain::Poly { poly_id }) => {
       let voices = voices_ident(poly_id);
       quote!(vec![false; #voices])
+    }
+    (ValueKind::Enum, Domain::Mono) => {
+      let (path, first_variant) = enum_parts(buffer);
+      quote!(#path::#first_variant)
+    }
+    (ValueKind::Enum, Domain::Poly { poly_id }) => {
+      let (path, first_variant) = enum_parts(buffer);
+      let voices = voices_ident(poly_id);
+      quote!(vec![#path::#first_variant; #voices])
     }
     (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
@@ -476,8 +493,8 @@ fn read_expression(source: &BufferRef, consumer: &Domain) -> TokenStream {
     (ValueKind::Events, true) => quote!(&self.state.#field[voice]),
     (ValueKind::Signal, false) => quote!(&self.state.#field[..frames]),
     (ValueKind::Signal, true) => quote!(&self.state.#field.voice(voice)[..frames]),
-    (ValueKind::Float | ValueKind::Bool, false) => quote!(self.state.#field),
-    (ValueKind::Float | ValueKind::Bool, true) => quote!(self.state.#field[voice]),
+    (ValueKind::Float | ValueKind::Bool | ValueKind::Enum, false) => quote!(self.state.#field),
+    (ValueKind::Float | ValueKind::Bool | ValueKind::Enum, true) => quote!(self.state.#field[voice]),
     (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
@@ -491,8 +508,8 @@ fn write_expression(output: &BufferRef) -> TokenStream {
     (ValueKind::Events, true) => quote!(&mut self.state.#field[voice]),
     (ValueKind::Signal, false) => quote!(&mut self.state.#field[..frames]),
     (ValueKind::Signal, true) => quote!(&mut self.state.#field.voice_mut(voice)[..frames]),
-    (ValueKind::Float | ValueKind::Bool, false) => quote!(&mut self.state.#field),
-    (ValueKind::Float | ValueKind::Bool, true) => quote!(&mut self.state.#field[voice]),
+    (ValueKind::Float | ValueKind::Bool | ValueKind::Enum, false) => quote!(&mut self.state.#field),
+    (ValueKind::Float | ValueKind::Bool | ValueKind::Enum, true) => quote!(&mut self.state.#field[voice]),
     (ValueKind::Number, _) => unreachable!("Number is a port kind, never the kind of a buffer"),
   }
 }
@@ -556,6 +573,13 @@ fn only_connection(node: &AnalyzedNode) -> Result<&Connection> {
     .ok_or_else(|| eyre!("node '{}' has no connected input", node.id))
 }
 
+/// The path of a buffer's enum and its first variant. The library resolver has checked that both are valid Rust.
+fn enum_parts(buffer: &BufferRef) -> (syn::Path, Ident) {
+  let enum_type = buffer.enum_type.as_ref().expect("a buffer of kind Enum has an enum type");
+  let path = parse_path(&enum_type.path).expect("the library resolver checks enum paths");
+  (path, format_ident!("{}", enum_type.first_variant))
+}
+
 fn parse_path(path: &str) -> Result<syn::Path> {
   syn::parse_str(path).wrap_err_with(|| format!("'{path}' is not a valid Rust path"))
 }
@@ -564,6 +588,7 @@ fn parse_path(path: &str) -> Result<syn::Path> {
 mod tests {
   use super::*;
   use crate::compilation_steps::library_resolver::library_resolver::test_support::std_catalog;
+  use crate::compilation_steps::patch_code_generator::catalog::{EnumType, PortSpec, StaticCatalog};
   use crate::compilation_steps::patch_file_parser::patch_graph::PatchGraph;
 
   const SINE_PATCH: &str = r#"
@@ -751,5 +776,134 @@ mod tests {
 
     let error = generate_patch_source(&graph, std_catalog()).unwrap_err();
     assert!(format!("{error:#}").contains("cycle"));
+  }
+
+  fn color(name: &str) -> EnumType {
+    EnumType { path: format!("lib::{name}"), first_variant: "Dark".to_string() }
+  }
+
+  fn port(name: &str, kind: ValueKind, enum_type: Option<EnumType>, arity: Arity) -> PortSpec {
+    PortSpec { name: name.to_string(), kind, enum_type, arity, min_connections: 0, default: None }
+  }
+
+  fn unit(type_path: &str, call_style: CallStyle, inputs: Vec<PortSpec>, outputs: Vec<PortSpec>) -> UnitSpec {
+    UnitSpec { short_name: String::new(), type_path: type_path.to_string(), call_style, inputs, outputs }
+  }
+
+  /// A knob that produces a number, a converter from the number to a `Color`, and a voice that
+  /// takes an optional `Color`. `lib::Shade` is a second enum for the mismatch tests.
+  fn enum_catalog() -> StaticCatalog {
+    StaticCatalog::new([
+      ("lib/knob".to_string(), unit("lib::Knob", CallStyle::Module, vec![], vec![port("value", ValueKind::Float, None, Arity::Required)])),
+      (
+        "lib/to-color".to_string(),
+        unit(
+          "lib::ToColor",
+          CallStyle::Converter,
+          vec![port("input", ValueKind::Float, None, Arity::Required)],
+          vec![port("out", ValueKind::Enum, Some(color("Color")), Arity::Required)],
+        ),
+      ),
+      (
+        "lib/to-shade".to_string(),
+        unit(
+          "lib::ToShade",
+          CallStyle::Converter,
+          vec![port("input", ValueKind::Float, None, Arity::Required)],
+          vec![port("out", ValueKind::Enum, Some(color("Shade")), Arity::Required)],
+        ),
+      ),
+      (
+        "lib/voice".to_string(),
+        unit(
+          "lib::Voice",
+          CallStyle::Module,
+          vec![port("color", ValueKind::Enum, Some(color("Color")), Arity::Optional)],
+          vec![port("out", ValueKind::Signal, None, Arity::Required)],
+        ),
+      ),
+    ])
+  }
+
+  fn enum_patch(converter: &str) -> PatchGraph {
+    format!(
+      r#"
+{{
+  "nodes": [
+    {{ "id": "knob_0", "kind": "module", "unit": "lib/knob" }},
+    {{ "id": "convert_0", "kind": "converter", "unit": "{converter}" }},
+    {{ "id": "voice_0", "kind": "module", "unit": "lib/voice" }},
+    {{ "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }}
+  ],
+  "edges": [
+    {{ "from": "knob_0.value", "to": "convert_0.input" }},
+    {{ "from": "convert_0.out", "to": "voice_0.color" }},
+    {{ "from": "voice_0.out", "to": "audio_out_0.in" }}
+  ]
+}}
+"#
+    )
+    .parse()
+    .unwrap()
+  }
+
+  #[test]
+  fn an_enum_parameter_is_a_buffer_of_the_enum_that_starts_with_its_first_variant() {
+    let source = generate_patch_source(&enum_patch("lib/to-color"), &enum_catalog()).unwrap();
+
+    assert!(contains_code(&source, "convert_0__out: lib::Color"), "{source}");
+    assert!(contains_code(&source, "convert_0__out: lib::Color::Dark"), "{source}");
+    assert!(contains_code(&source, "Inputs::new(Some(self.state.convert_0__out))"), "{source}");
+  }
+
+  #[test]
+  fn an_unconnected_optional_enum_parameter_is_none() {
+    let json = r#"
+{
+  "nodes": [
+    { "id": "voice_0", "kind": "module", "unit": "lib/voice" },
+    { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
+  ],
+  "edges": [
+    { "from": "voice_0.out", "to": "audio_out_0.in" }
+  ]
+}
+"#;
+    let graph: PatchGraph = json.parse().unwrap();
+
+    let source = generate_patch_source(&graph, &enum_catalog()).unwrap();
+
+    assert!(contains_code(&source, "Inputs::new(None)"), "{source}");
+  }
+
+  #[test]
+  fn rejects_an_enum_parameter_fed_by_another_enum() {
+    let error = generate_patch_source(&enum_patch("lib/to-shade"), &enum_catalog()).unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(message.contains("type mismatch on 'voice_0.color'"), "{message}");
+    assert!(message.contains("expected enum lib::Color, but 'convert_0.out' provides enum lib::Shade"), "{message}");
+  }
+
+  #[test]
+  fn rejects_an_enum_parameter_fed_by_a_number() {
+    let json = r#"
+{
+  "nodes": [
+    { "id": "knob_0", "kind": "module", "unit": "lib/knob" },
+    { "id": "voice_0", "kind": "module", "unit": "lib/voice" },
+    { "id": "audio_out_0", "kind": "interface", "interface": "audio_out" }
+  ],
+  "edges": [
+    { "from": "knob_0.value", "to": "voice_0.color" },
+    { "from": "voice_0.out", "to": "audio_out_0.in" }
+  ]
+}
+"#;
+    let graph: PatchGraph = json.parse().unwrap();
+
+    let error = generate_patch_source(&graph, &enum_catalog()).unwrap_err();
+
+    assert!(format!("{error:#}").contains("expected enum lib::Color, but 'knob_0.value' provides Float"), "{error:#}");
   }
 }

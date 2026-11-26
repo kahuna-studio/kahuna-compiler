@@ -11,6 +11,19 @@ pub const FORMAT_VERSION: u32 = 1;
 pub struct LibraryManifest {
   pub format_version: u32,
   pub units: Vec<UnitEntry>,
+  /// The `#[kahuna_enum]` enums of the library: the value types of parameter ports that are not numbers or booleans.
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub enums: Vec<EnumEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumEntry {
+  /// What a port writes as its `value_type`; unique within the library.
+  pub name: String,
+  /// Relative to the library's root module, without the library's name.
+  pub rust_path: String,
+  /// As written in the source, in source order. The first one is the enum's initial value.
+  pub variants: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

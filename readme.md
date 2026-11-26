@@ -29,8 +29,8 @@ What works today:
   `#[kahuna_converter]` and `#[kahuna_value_operator]`. A library publishes a `kahuna-library.json` manifest with the
   ports of its units. The compiler generates that manifest from the library's source, using the same parser as the
   macros, so both agree on what a unit looks like.
-- **Standard library.** `kahuna-std` has sine, saw, square and triangle oscillators, a filter, a band pass, an ADSR
-  envelope, MIDI converters, and arithmetic, comparison and mixing operators. The filter is a low pass, high pass or
+- **Standard library.** `kahuna-std` has sine, saw, square and triangle oscillators, a noise source, a filter, a band pass,
+  an ADSR envelope, MIDI converters, and arithmetic, comparison and mixing operators. The filter is a low pass, high pass or
   flat band pass, depending on which of its cutoff inputs are connected; the band pass has a resonant peak around one
   center frequency, with its width given in octaves.
 - **Watch mode.** `kahuna-compiler watch` rechecks an instrument whenever its files change. It is built on

@@ -21,9 +21,12 @@ use crate::compilation_steps::crate_writer::crate_writer::{
 };
 use crate::compilation_steps::instrument_file_parser::instrument_metadata::InstrumentMetadata;
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
-  LibraryManifest, PortDirection, PortEntry, StreamType, UnitEntry, UnitKind, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
+  EnumEntry, LibraryManifest, PortDirection, PortEntry, StreamType, UnitEntry, UnitKind, FORMAT_VERSION,
+  LIBRARY_MANIFEST_FILE,
 };
-use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, StaticCatalog, UnitSpec, ValueKind};
+use crate::compilation_steps::patch_code_generator::catalog::{
+  Arity, CallStyle, EnumType, PortSpec, StaticCatalog, UnitSpec, ValueKind,
+};
 
 /// The standard library: a sibling of this crate in the toolchain repository, and a dependency of
 /// every generated crate. It is both the crate name and what patches write before the slash.
@@ -87,7 +90,7 @@ pub fn resolve_libraries(metadata: &InstrumentMetadata, output_dir: &Path) -> Re
     for unit in &manifest.units {
       let reference = format!("{}/{}", dependency.key, unit.id);
       // One unusable unit must not make the rest of its library unusable.
-      match unit_spec(unit, &located.extern_name, &short_names[&reference]) {
+      match unit_spec(unit, &manifest.enums, &located.extern_name, &short_names[&reference]) {
         Ok(spec) => entries.push((reference, spec)),
         Err(reason) => unsupported_units.push(format!("{reference}: {reason}")),
       }
@@ -253,7 +256,7 @@ fn read_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
   Ok(manifest)
 }
 
-fn unit_spec(unit: &UnitEntry, extern_name: &str, short_name: &str) -> Result<UnitSpec> {
+fn unit_spec(unit: &UnitEntry, enums: &[EnumEntry], extern_name: &str, short_name: &str) -> Result<UnitSpec> {
   let (inputs, outputs): (Vec<&PortEntry>, Vec<&PortEntry>) =
     unit.ports.iter().partition(|port| port.direction == PortDirection::Input);
   let call_style = match unit.kind {
@@ -269,7 +272,7 @@ fn unit_spec(unit: &UnitEntry, extern_name: &str, short_name: &str) -> Result<Un
     }
   };
   let port_spec = |port: &PortEntry| match unit.kind {
-    UnitKind::Module | UnitKind::Converter => struct_unit_port_spec(port),
+    UnitKind::Module | UnitKind::Converter => struct_unit_port_spec(port, enums, extern_name),
     UnitKind::ValueOperator => operator_port_spec(port, unit.fold),
   };
 
@@ -282,17 +285,23 @@ fn unit_spec(unit: &UnitEntry, extern_name: &str, short_name: &str) -> Result<Un
   })
 }
 
-/// Modules and converters.
-fn struct_unit_port_spec(port: &PortEntry) -> Result<PortSpec> {
+/// Modules and converters. A parameter can carry a number, a bool, or an enum of the unit's own library.
+fn struct_unit_port_spec(port: &PortEntry, enums: &[EnumEntry], extern_name: &str) -> Result<PortSpec> {
   let stream_type = port
     .stream_type
     .ok_or_else(|| eyre!("port '{}' has no stream type", port.name))?;
-  let kind = match (stream_type, port.value_type.as_str()) {
-    (StreamType::Event, _) => ValueKind::Events,
-    (StreamType::Signal, _) => ValueKind::Signal,
-    (StreamType::Parameter, "bool") => ValueKind::Bool,
-    (StreamType::Parameter, "f32" | "Unipolar" | "Bipolar") => ValueKind::Float,
-    (StreamType::Parameter, other) => bail!("parameter port '{}' has type '{other}', which patches don't support yet", port.name),
+  let (kind, enum_type) = match (stream_type, port.value_type.as_str()) {
+    (StreamType::Event, _) => (ValueKind::Events, None),
+    (StreamType::Signal, _) => (ValueKind::Signal, None),
+    (StreamType::Parameter, "bool") => (ValueKind::Bool, None),
+    (StreamType::Parameter, "f32" | "Unipolar" | "Bipolar") => (ValueKind::Float, None),
+    (StreamType::Parameter, other) => match enums.iter().find(|entry| entry.name == other) {
+      Some(entry) => (ValueKind::Enum, Some(enum_type(entry, extern_name)?)),
+      None => bail!(
+        "parameter port '{}' has type '{other}', which is neither a number, a bool, nor a #[kahuna_enum] of the unit's library",
+        port.name
+      ),
+    },
   };
   // Only parameters with a default or declared `Option<T>` can stay unconnected; their constructor argument is an Option.
   let arity = match (port.direction, stream_type, port.required) {
@@ -302,10 +311,28 @@ fn struct_unit_port_spec(port: &PortEntry) -> Result<PortSpec> {
   Ok(PortSpec {
     name: port.name.clone(),
     kind,
+    enum_type,
     arity,
     min_connections: 0,
     default: None,
   })
+}
+
+/// The manifest is a file that can be edited, and the generator writes these names into Rust code unchecked.
+fn enum_type(entry: &EnumEntry, extern_name: &str) -> Result<EnumType> {
+  let path = format!("{extern_name}::{}", entry.rust_path);
+  ensure!(syn::parse_str::<syn::Path>(&path).is_ok(), "enum '{}' has the invalid path '{path}'", entry.name);
+
+  let first_variant = entry
+    .variants
+    .first()
+    .ok_or_else(|| eyre!("enum '{}' has no variants", entry.name))?;
+  ensure!(
+    syn::parse_str::<syn::Ident>(first_variant).is_ok(),
+    "enum '{}' has the invalid variant '{first_variant}'",
+    entry.name
+  );
+  Ok(EnumType { path, first_variant: first_variant.clone() })
 }
 
 /// So far the generator handles value operators whose ports are all `f32`, with fixed inputs or
@@ -328,6 +355,7 @@ fn operator_port_spec(port: &PortEntry, fold: bool) -> Result<PortSpec> {
   Ok(PortSpec {
     name: port.name.clone(),
     kind: ValueKind::Number,
+    enum_type: None,
     arity,
     min_connections: port.min_connections.unwrap_or(0),
     default: port.default.as_ref().and_then(|default| default.as_f64()).map(|default| default as f32),
@@ -384,6 +412,71 @@ mod tests {
       .collect::<Vec<_>>()
       .join(",");
     serde_json::from_str(&format!("{{ \"format_version\": {FORMAT_VERSION}, \"units\": [{units}] }}")).unwrap()
+  }
+
+  fn parameter_port(name: &str, value_type: &str, required: Option<bool>) -> PortEntry {
+    serde_json::from_value(serde_json::json!({
+      "name": name,
+      "direction": "input",
+      "stream_type": "parameter",
+      "value_type": value_type,
+      "required": required,
+    }))
+    .unwrap()
+  }
+
+  fn noise_color() -> EnumEntry {
+    EnumEntry {
+      name: "NoiseColor".to_string(),
+      rust_path: "modules::noise::NoiseColor".to_string(),
+      variants: ["White", "Pink"].map(String::from).to_vec(),
+    }
+  }
+
+  #[test]
+  fn an_enum_of_the_library_becomes_an_optional_enum_port() {
+    let port = parameter_port("color", "NoiseColor", Some(false));
+
+    let spec = struct_unit_port_spec(&port, &[noise_color()], "kahuna_std").unwrap();
+
+    assert_eq!(spec.kind, ValueKind::Enum);
+    assert_eq!(spec.arity, Arity::Optional);
+    assert_eq!(
+      spec.enum_type,
+      Some(EnumType {
+        path: "kahuna_std::modules::noise::NoiseColor".to_string(),
+        first_variant: "White".to_string(),
+      })
+    );
+  }
+
+  #[test]
+  fn a_required_enum_port_stays_required() {
+    let port = parameter_port("color", "NoiseColor", Some(true));
+
+    let spec = struct_unit_port_spec(&port, &[noise_color()], "kahuna_std").unwrap();
+
+    assert_eq!(spec.arity, Arity::Required);
+  }
+
+  #[test]
+  fn a_parameter_of_an_unknown_type_is_rejected() {
+    let port = parameter_port("color", "NoiseColour", Some(false));
+
+    let error = struct_unit_port_spec(&port, &[noise_color()], "kahuna_std").unwrap_err();
+
+    assert!(format!("{error:#}").contains("NoiseColour"), "{error:#}");
+  }
+
+  #[test]
+  fn an_edited_manifest_cannot_put_invalid_rust_into_the_generated_code() {
+    let port = parameter_port("color", "NoiseColor", Some(false));
+
+    for (rust_path, variants) in [("not a path", vec!["White"]), ("modules::NoiseColor", vec!["Wh ite"]), ("modules::NoiseColor", vec![])] {
+      let entry = EnumEntry { name: "NoiseColor".to_string(), rust_path: rust_path.to_string(), variants: variants.into_iter().map(String::from).collect() };
+
+      assert!(struct_unit_port_spec(&port, &[entry], "kahuna_std").is_err(), "{rust_path}");
+    }
   }
 
   #[test]

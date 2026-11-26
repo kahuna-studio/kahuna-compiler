@@ -188,6 +188,28 @@
       ]
     },
     {
+      "id": "noise",
+      "kind": "module",
+      "rust_path": "modules::noise::Noise",
+      "ports": [
+        {
+          "direction": "input",
+          "name": "color",
+          "stream_type": "parameter",
+          "rate": "control",
+          "value_type": "NoiseColor",
+          "required": false
+        },
+        {
+          "direction": "output",
+          "name": "out",
+          "stream_type": "signal",
+          "rate": "audio",
+          "value_type": "Bipolar"
+        }
+      ]
+    },
+    {
       "id": "sine",
       "kind": "module",
       "rust_path": "modules::sine_osc::SineOsc",
@@ -639,6 +661,17 @@
           "name": "out",
           "value_type": "T"
         }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "NoiseColor",
+      "rust_path": "modules::noise::NoiseColor",
+      "variants": [
+        "White",
+        "Pink",
+        "Brown"
       ]
     }
   ]

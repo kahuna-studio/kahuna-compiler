@@ -3,6 +3,7 @@
 pub mod adsr_envelope;
 pub mod band_pass;
 pub mod filter;
+pub mod noise;
 pub mod sine_osc;
 pub mod saw_osc;
 pub mod square_osc;

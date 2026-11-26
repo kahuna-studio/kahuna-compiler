@@ -10,6 +10,8 @@ pub enum ValueKind {
   Signal,
   Float,
   Bool,
+  /// A `#[kahuna_enum]` parameter; which enum is in `enum_type` of the port or buffer.
+  Enum,
   /// Ports of value operators only: an audio signal or a parameter, whichever is connected.
   /// Never the kind of a buffer; an operator's output resolves to `Signal` or `Float`.
   Number,
@@ -20,6 +22,15 @@ impl ValueKind {
   pub fn accepts(self, source: ValueKind) -> bool {
     self == source || (self == ValueKind::Number && matches!(source, ValueKind::Signal | ValueKind::Float))
   }
+}
+
+/// An enum a parameter carries, as generated code names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumType {
+  /// From the library's crate on, e.g. `kahuna_std::modules::noise::NoiseColor`.
+  pub path: String,
+  /// The value the enum's buffers start with.
+  pub first_variant: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +44,8 @@ pub enum Arity {
 pub struct PortSpec {
   pub name: String,
   pub kind: ValueKind,
+  /// Present exactly when `kind` is `Enum`.
+  pub enum_type: Option<EnumType>,
   pub arity: Arity,
   /// Variadic ports only.
   pub min_connections: usize,
@@ -96,6 +109,7 @@ impl PortSpec {
     Self {
       name: name.to_string(),
       kind,
+      enum_type: None,
       arity,
       min_connections: 0,
       default: None,

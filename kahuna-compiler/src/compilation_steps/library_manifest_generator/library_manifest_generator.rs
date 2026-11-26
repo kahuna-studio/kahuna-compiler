@@ -1,23 +1,24 @@
 //! Builds a unit library's manifest by reading its source with `syn`. Nothing is compiled.
 //!
 //! Starting at the library root, the scanner follows `mod` declarations the same way rustc
-//! does and collects every struct marked `#[kahuna_module]` or `#[kahuna_converter]`, and every
-//! function marked `#[kahuna_value_operator]`.
+//! does and collects every struct marked `#[kahuna_module]` or `#[kahuna_converter]`, every
+//! function marked `#[kahuna_value_operator]`, and every enum marked `#[kahuna_enum]`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{bail, eyre, Result, WrapErr};
 use kahuna_unit_syntax::{
-  parse_unit, parse_value_operator, Direction, LiteralValue, PortConfiguration, UnitAttributes,
-  UnitKind as DeclaredKind,
+  parse_enum, parse_unit, parse_value_operator, Direction, LiteralValue, PortConfiguration, UnitAttributes,
+  UnitKind as DeclaredKind, ENUM_MARKER,
 };
 use quote::ToTokens;
 use syn::ext::IdentExt;
-use syn::{Attribute, DeriveInput, Ident, Item, ItemFn, ItemStruct, Meta, Type, Visibility};
+use syn::{Attribute, DeriveInput, Ident, Item, ItemEnum, ItemFn, ItemStruct, Meta, Type, Visibility};
 
 use crate::compilation_steps::library_manifest_generator::library_manifest::{
-  PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, LibraryManifest, FORMAT_VERSION, LIBRARY_MANIFEST_FILE,
+  EnumEntry, PortDirection, PortEntry, Rate, StreamType, UnitEntry, UnitKind, LibraryManifest, FORMAT_VERSION,
+  LIBRARY_MANIFEST_FILE,
 };
 
 /// Scans the library in `crate_dir` and writes its manifest next to its Cargo.toml.
@@ -39,13 +40,15 @@ pub fn generate_library_manifest(crate_dir: &Path) -> Result<LibraryManifest> {
       .expect("library root is a file inside the crate")
       .to_path_buf();
 
-  let mut scanner = Scanner { units: Vec::new() };
+  let mut scanner = Scanner { units: Vec::new(), enums: Vec::new() };
   scanner.scan_file(&library_root, &children_dir, &[], true)?;
   check_unique_ids(&scanner.units)?;
+  check_unique_enum_names(&scanner.enums)?;
 
   Ok(LibraryManifest {
     format_version: FORMAT_VERSION,
     units: scanner.units,
+    enums: scanner.enums,
   })
 }
 
@@ -75,6 +78,7 @@ fn library_root(crate_dir: &Path) -> Result<PathBuf> {
 
 struct Scanner {
   units: Vec<UnitEntry>,
+  enums: Vec<EnumEntry>,
 }
 
 impl Scanner {
@@ -117,6 +121,9 @@ impl Scanner {
             self.units.push(unit);
           }
         }
+        Item::Enum(item_enum) if has_enum_marker(&item_enum.attrs) => {
+          self.enums.push(read_enum(item_enum, file, module_path, public)?);
+        }
         Item::Fn(item_fn) => {
           if let Some((marker, kind)) = find_marker(&item_fn.attrs) {
             ensure_marker_fits(kind, ItemShape::Function, &item_fn.sig.ident, file)?;
@@ -157,6 +164,20 @@ fn read_unit(
     type_parameters: vec![],
     fold: false,
     ports: unit.ports.iter().map(port_entry).collect(),
+  })
+}
+
+fn read_enum(item_enum: &ItemEnum, file: &Path, module_path: &[String], public: bool) -> Result<EnumEntry> {
+  let rust_path = rust_path_of(module_path, &item_enum.ident);
+  ensure_reachable(&rust_path, public && is_public(&item_enum.vis), file)?;
+
+  let input = DeriveInput::from(item_enum.clone());
+  let declaration = parse_enum(&input).map_err(|error| located(file, error))?;
+
+  Ok(EnumEntry {
+    name: declaration.name.unraw().to_string(),
+    rust_path,
+    variants: declaration.variants.iter().map(|variant| variant.unraw().to_string()).collect(),
   })
 }
 
@@ -266,6 +287,21 @@ fn check_unique_ids(units: &[UnitEntry]) -> Result<()> {
   Ok(())
 }
 
+/// Ports name an enum by its bare name, so two enums of one library can't share it.
+fn check_unique_enum_names(enums: &[EnumEntry]) -> Result<()> {
+  for (index, entry) in enums.iter().enumerate() {
+    if let Some(duplicate) = enums[index + 1..].iter().find(|other| other.name == entry.name) {
+      bail!(
+        "enums `{}` and `{}` have the same name `{}`; ports refer to an enum by its name, so rename one of them",
+        entry.rust_path,
+        duplicate.rust_path,
+        entry.name
+      );
+    }
+  }
+  Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -337,6 +373,12 @@ fn module_file(module: &syn::ItemMod, file: &Path, children_dir: &Path, name: &s
       })
 }
 
+fn has_enum_marker(attributes: &[Attribute]) -> bool {
+  attributes
+    .iter()
+    .any(|attribute| attribute.path().segments.last().is_some_and(|segment| segment.ident == ENUM_MARKER))
+}
+
 fn find_marker(attributes: &[Attribute]) -> Option<(&Attribute, DeclaredKind)> {
   attributes.iter().find_map(|attribute| {
     let segment = attribute.path().segments.last()?;
@@ -402,6 +444,68 @@ mod tests {
       expected,
       "kahuna-std/{LIBRARY_MANIFEST_FILE} is out of date; regenerate it with `kahuna-compiler manifest kahuna-std`"
     );
+  }
+
+  #[test]
+  fn reads_enums_with_their_variants_as_written() {
+    let crate_dir = temporary_crate(
+      "enums",
+      &[
+        ("src/lib.rs", "pub mod modules;"),
+        ("src/modules.rs", "#[kahuna_enum] pub enum NoiseColor { White, Pink, Brown }"),
+      ],
+    );
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+
+    assert_eq!(
+      manifest.enums,
+      [EnumEntry {
+        name: "NoiseColor".to_string(),
+        rust_path: "modules::NoiseColor".to_string(),
+        variants: ["White", "Pink", "Brown"].map(String::from).to_vec(),
+      }]
+    );
+  }
+
+  #[test]
+  fn rejects_enums_that_the_generated_crate_cannot_name() {
+    let crate_dir = temporary_crate("private-enum", &[("src/lib.rs", "#[kahuna_enum] enum NoiseColor { White }")]);
+
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
+
+    assert!(format!("{error:#}").contains("NoiseColor"), "{error:#}");
+  }
+
+  #[test]
+  fn rejects_enums_with_payloads() {
+    let crate_dir = temporary_crate("payload-enum", &[("src/lib.rs", "#[kahuna_enum] pub enum Mode { Fixed(f32) }")]);
+
+    assert!(generate_library_manifest(&crate_dir).is_err());
+  }
+
+  #[test]
+  fn rejects_two_enums_with_the_same_name() {
+    let crate_dir = temporary_crate(
+      "duplicate-enums",
+      &[(
+        "src/lib.rs",
+        "pub mod a { #[kahuna_enum] pub enum Mode { One } } pub mod b { #[kahuna_enum] pub enum Mode { Two } }",
+      )],
+    );
+
+    let error = generate_library_manifest(&crate_dir).unwrap_err();
+
+    assert!(format!("{error:#}").contains("have the same name `Mode`"), "{error:#}");
+  }
+
+  #[test]
+  fn a_library_without_enums_has_no_enums_entry() {
+    let crate_dir = temporary_crate("no-enums", &[("src/lib.rs", "")]);
+
+    let manifest = generate_library_manifest(&crate_dir).unwrap();
+
+    assert!(!to_json(&manifest).unwrap().contains("enums"));
   }
 
   #[test]

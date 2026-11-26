@@ -143,9 +143,18 @@ when left alone takes `#[input(default = ...)]`, and `process()` never sees an `
 means something takes `Parameter<Option<T>>`: the manifest lists it with `required: false` and no `default`,
 and `process()` receives `None` when nothing is connected. The `filter` unit uses this for its two cutoffs: only
 `low_pass_cutoff` connected is a low pass, only `high_pass_cutoff` a high pass, both a band pass. The alternative, a mode
-parameter, was rejected because the library resolver only accepts `bool` and float parameters, and because wiring already
-says what the patch means. `Option` is accepted only on parameter inputs: signals and events have no "not connected"
-value that `process()` could branch on per block.
+parameter, was rejected because wiring already says what the patch means. `Option` is accepted only on parameter
+inputs: signals and events have no "not connected" value that `process()` could branch on per block.
+
+**A parameter can carry an enum.** A plain enum marked `#[kahuna_enum]` is the value type of a parameter port, e.g.
+`Parameter<Option<NoiseColor>>` on the `noise` unit. The macro adds `Debug`, `Clone`, `Copy`, `PartialEq` and `Eq`;
+variants carry no data. The manifest lists each enum under `enums` with its name, its path in the library and its
+variants as written, and a port refers to its enum by that name, so an enum is usable by the units of its own library
+and its names are unique within a library. In the generated patch, an enum wire is a plain `Copy` value like a float
+one, starting with the enum's first variant. Two enum ports connect only if they carry the same enum. A patch has no
+constants, so the only way to put a value on an enum wire is a converter that outputs the enum; an unconnected optional
+enum port gets `None`. Which enum values the host can automate is open: automation parameters are stepped floats, which
+fits an index into the variants.
 
 **Units are referenced by id, not by Rust path.** An id defaults to the struct name in kebab-case
 (`AdsrEnvelope` → `adsr-envelope`) and can be pinned with `#[kahuna_module(id = "...")]`, so renaming or moving a

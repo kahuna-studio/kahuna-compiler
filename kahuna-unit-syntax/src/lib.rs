@@ -1,5 +1,5 @@
 //! Parses unit declarations from Rust syntax: `#[kahuna_module]` and `#[kahuna_converter]` structs,
-//! and `#[kahuna_value_operator]` functions.
+//! `#[kahuna_value_operator]` functions, and the `#[kahuna_enum]` enums that parameter ports can carry.
 //!
 //! Shared by the `kahuna-unit` macros, which generate code from it, and the compiler's
 //! manifest generator, which reads unit libraries without compiling them. Keeping one parser
@@ -10,9 +10,11 @@ use kahuna_core::{Rate, StreamKind};
 use syn::parse::ParseStream;
 use syn::{Data, DeriveInput, Expr, Field, Fields, GenericArgument, Ident, Lit, PathArguments, Type, UnOp};
 
+mod enum_declaration;
 mod operator;
 pub mod model;
 
+pub use enum_declaration::{parse_enum, EnumDeclaration, ENUM_MARKER};
 pub use operator::{parse_value_operator, strip_input_attributes};
 pub use crate::model::declaration::literal::{DefaultValue, LiteralValue};
 pub use crate::model::declaration::port_configuration::Direction as Direction;

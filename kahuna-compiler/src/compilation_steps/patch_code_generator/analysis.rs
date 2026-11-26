@@ -1,6 +1,6 @@
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, PortSpec, UnitCatalog, UnitSpec, ValueKind};
+use crate::compilation_steps::patch_code_generator::catalog::{Arity, CallStyle, EnumType, PortSpec, UnitCatalog, UnitSpec, ValueKind};
 use crate::compilation_steps::patch_file_parser::patch_graph::{Edge, Node, PatchGraph};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +30,8 @@ pub struct BufferRef {
   pub node_id: String,
   pub port_name: String,
   pub kind: ValueKind,
+  /// Present exactly when `kind` is `Enum`.
+  pub enum_type: Option<EnumType>,
   pub domain: Domain,
 }
 
@@ -125,6 +127,7 @@ fn analyze_node(
       node_id: node.id().to_string(),
       port_name: port.name.clone(),
       kind: resolved_output_kind(port.kind, &inputs),
+      enum_type: port.enum_type.clone(),
       domain: output_domain.clone(),
     })
     .collect();
@@ -316,18 +319,25 @@ fn resolved_output_kind(kind: ValueKind, inputs: &[ResolvedInput]) -> ValueKind 
   if any_signal { ValueKind::Signal } else { ValueKind::Float }
 }
 
+/// The kind as an error message names it; an enum by its path.
+fn describe_kind(kind: ValueKind, enum_type: &Option<EnumType>) -> String {
+  match enum_type {
+    Some(enum_type) => format!("enum {}", enum_type.path),
+    None => format!("{kind:?}"),
+  }
+}
+
 fn validate_connections(node_id: &str, port: &PortSpec, connections: &[Connection]) -> Result<()> {
-  if let Some(mismatch) = connections
-    .iter()
-    .find(|connection| !port.kind.accepts(connection.source.kind))
-  {
+  if let Some(mismatch) = connections.iter().find(|connection| {
+    !port.kind.accepts(connection.source.kind) || port.enum_type != connection.source.enum_type
+  }) {
     bail!(
-            "type mismatch on '{node_id}.{}': expected {:?}, but '{}.{}' provides {:?}",
+            "type mismatch on '{node_id}.{}': expected {}, but '{}.{}' provides {}",
             port.name,
-            port.kind,
+            describe_kind(port.kind, &port.enum_type),
             mismatch.source.node_id,
             mismatch.source.port_name,
-            mismatch.source.kind
+            describe_kind(mismatch.source.kind, &mismatch.source.enum_type)
         );
   }
 

@@ -16,7 +16,7 @@ Kahuna has three kinds of streams that flow between module ports. All stream val
 |---|---|---|---|
 | Signal | `Vec<f32>` / `PolyBuffer<f32>` | `&mut [f32]` | `&[f32]` |
 | Event | `Vec<MidiEvent>` | `&mut Vec<MidiEvent>` | `&[MidiEvent]` |
-| Parameter | `f32` | `&mut f32` | `f32` |
+| Parameter | `f32`, `bool`, or a `#[kahuna_enum]` enum | `&mut T` | `T` |
 
 Signal and event inputs are sliced to `frames` before being passed to modules:
 
@@ -25,7 +25,7 @@ Signal and event inputs are sliced to `frames` before being passed to modules:
 &mut self.state.sine_osc_0__out.voice_mut(voice)[..frames]
 ```
 
-Parameters are `Copy` scalars — passed by value to consumers, no slicing needed.
+Parameters are `Copy` scalars — passed by value to consumers, no slicing needed. A parameter that may stay unconnected is declared `Parameter<Option<T>>` and arrives as `Option<T>`.
 
 ## Module Constructor and Process Signatures
 

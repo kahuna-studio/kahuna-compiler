@@ -1,6 +1,6 @@
 use kahuna_core::{Rate, StreamKind};
 use kahuna_unit_syntax::{
-    parse_unit, parse_value_operator, strip_input_attributes, Direction, PortConfiguration, UnitAttributes, UnitKind,
+    parse_enum, parse_unit, parse_value_operator, strip_input_attributes, Direction, PortConfiguration, UnitAttributes, UnitKind,
 };
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -32,6 +32,16 @@ pub fn kahuna_converter(attribute: TokenStream, item: TokenStream) -> TokenStrea
 #[proc_macro_attribute]
 pub fn kahuna_value_operator(attribute: TokenStream, item: TokenStream) -> TokenStream {
     match expand_value_operator(attribute.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Marks an enum as the value type of parameter ports, e.g. `Parameter<Option<NoiseColor>>`.
+/// The enum gets `Debug`, `Clone`, `Copy`, `PartialEq` and `Eq`, which the generated patch code relies on.
+#[proc_macro_attribute]
+pub fn kahuna_enum(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    match expand_enum(attribute.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -143,6 +153,19 @@ fn expand_converter(attribute: proc_macro2::TokenStream, item: proc_macro2::Toke
                 Self::init(env)
             }
         }
+    })
+}
+
+fn expand_enum(attribute: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    if !attribute.is_empty() {
+        return Err(syn::Error::new_spanned(attribute, "#[kahuna_enum] takes no arguments"));
+    }
+    let item: syn::ItemEnum = syn::parse2(item)?;
+    parse_enum(&DeriveInput::from(item.clone()))?;
+
+    Ok(quote! {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #item
     })
 }
 
